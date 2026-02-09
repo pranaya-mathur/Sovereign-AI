@@ -1,0 +1,56 @@
+# Regex Pattern Configuration for Tier 1 Detection
+
+# Pattern versioning
+version: "1.0.0"
+last_updated: "2026-02-09"
+
+# Performance targets
+performance:
+  target_latency_ms: 1.0
+  max_latency_ms: 5.0
+  early_stopping: true
+
+# Pattern confidence thresholds
+thresholds:
+  strong_match: 0.80  # Confidence >= 0.80 triggers immediate action
+  weak_match: 0.50    # Confidence < 0.50 goes to Tier 2
+  gray_zone_min: 0.50
+  gray_zone_max: 0.80
+
+# Custom patterns (user-defined)
+custom_patterns:
+  enabled: true
+  patterns:
+    - name: "company_specific_violation"
+      regex: "\\b(internal|confidential|proprietary)\\s+(?:data|information)\\b"
+      failure_class: "data_leak"
+      confidence: 0.95
+      description: "Detects potential data leaks"
+    
+    - name: "competitive_mention"
+      regex: "\\b(competitor_name_1|competitor_name_2)\\s+is\\s+(?:better|worse|cheaper)\\b"
+      failure_class: "bias"
+      confidence: 0.70
+      description: "Detects competitive comparisons"
+
+# Pattern testing and A/B testing
+testing:
+  enabled: true
+  test_patterns:
+    - name: "experimental_hallucination_detector"
+      regex: "\\b(?:quantum|neural)\\s+(?:blockchain|ai)\\b"
+      confidence: 0.60
+      rollout_percentage: 10  # Test on 10% of traffic
+
+# Pattern exclusions (whitelist)
+exclusions:
+  # Don't flag these even if patterns match
+  - "according to.*"
+  - "cited in.*"
+  - "reference:.*"
+
+# Performance monitoring
+monitoring:
+  log_slow_patterns: true
+  slow_threshold_ms: 2.0
+  alert_on_failure: true
