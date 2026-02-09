@@ -10,11 +10,15 @@ import json
 
 try:
     from langgraph.graph import StateGraph, END
-    from langchain.schema import HumanMessage, SystemMessage
-
     LANGGRAPH_AVAILABLE = True
 except ImportError:
-    LANGGRAPH_AVAILABLE = False
+    try:
+        # Try alternative import for newer versions
+        from langgraph.graph import Graph as StateGraph
+        from langgraph.graph import END
+        LANGGRAPH_AVAILABLE = True
+    except ImportError:
+        LANGGRAPH_AVAILABLE = False
 
 from agent.decision_cache import DecisionCache
 from agent.llm_providers import LLMProviderManager
@@ -47,30 +51,36 @@ class PromptInjectionAgent:
         self.llm_manager = LLMProviderManager()
         self.workflow = self._build_workflow()
 
-    def _build_workflow(self) -> StateGraph:
+    def _build_workflow(self):
         """Build LangGraph workflow for multi-step reasoning."""
-        workflow = StateGraph(AgentState)
+        try:
+            workflow = StateGraph(AgentState)
 
-        # Define nodes
-        workflow.add_node("check_cache", self._check_cache)
-        workflow.add_node("analyze_prompt", self._analyze_prompt)
-        workflow.add_node("make_decision", self._make_decision)
-        workflow.add_node("cache_result", self._cache_result)
+            # Define nodes
+            workflow.add_node("check_cache", self._check_cache)
+            workflow.add_node("analyze_prompt", self._analyze_prompt)
+            workflow.add_node("make_decision", self._make_decision)
+            workflow.add_node("cache_result", self._cache_result)
 
-        # Define edges
-        workflow.set_entry_point("check_cache")
+            # Define edges
+            workflow.set_entry_point("check_cache")
 
-        workflow.add_conditional_edges(
-            "check_cache",
-            lambda state: "end" if state.cached else "analyze",
-            {"end": END, "analyze": "analyze_prompt"},
-        )
+            workflow.add_conditional_edges(
+                "check_cache",
+                lambda state: "end" if state.cached else "analyze",
+                {"end": END, "analyze": "analyze_prompt"},
+            )
 
-        workflow.add_edge("analyze_prompt", "make_decision")
-        workflow.add_edge("make_decision", "cache_result")
-        workflow.add_edge("cache_result", END)
+            workflow.add_edge("analyze_prompt", "make_decision")
+            workflow.add_edge("make_decision", "cache_result")
+            workflow.add_edge("cache_result", END)
 
-        return workflow.compile()
+            return workflow.compile()
+        except Exception as e:
+            # Fallback: Simple workflow without LangGraph
+            print(f"Warning: LangGraph workflow compilation failed: {e}")
+            print("Using simple fallback workflow")
+            return None
 
     def _check_cache(self, state: AgentState) -> AgentState:
         """Check if decision is cached."""
@@ -152,6 +162,29 @@ Context:
 
         return state
 
+    def _simple_analyze(self, prompt: str, context: Dict[str, Any]) -> Dict[str, Any]:
+        """Simple analysis without LangGraph workflow (fallback)."""
+        state = AgentState(prompt=prompt, context=context)
+        
+        # Step 1: Check cache
+        state = self._check_cache(state)
+        
+        if not state.cached:
+            # Step 2: Analyze
+            state = self._analyze_prompt(state)
+            # Step 3: Make decision
+            state = self._make_decision(state)
+            # Step 4: Cache result
+            state = self._cache_result(state)
+        
+        return {
+            "decision": state.decision,
+            "confidence": state.confidence,
+            "reasoning": state.reasoning,
+            "cached": state.cached,
+            "tier": state.tier,
+        }
+
     def analyze(self, prompt: str, context: Dict[str, Any]) -> Dict[str, Any]:
         """Analyze prompt for injection (main entry point)."""
         initial_state = AgentState(
@@ -159,16 +192,22 @@ Context:
             context=context,
         )
 
-        # Run workflow
-        final_state = self.workflow.invoke(initial_state)
-
-        return {
-            "decision": final_state.decision,
-            "confidence": final_state.confidence,
-            "reasoning": final_state.reasoning,
-            "cached": final_state.cached,
-            "tier": final_state.tier,
-        }
+        # Try workflow, fallback to simple if not available
+        if self.workflow:
+            try:
+                final_state = self.workflow.invoke(initial_state)
+                return {
+                    "decision": final_state.decision,
+                    "confidence": final_state.confidence,
+                    "reasoning": final_state.reasoning,
+                    "cached": final_state.cached,
+                    "tier": final_state.tier,
+                }
+            except Exception as e:
+                print(f"Warning: Workflow failed, using simple analysis: {e}")
+                return self._simple_analyze(prompt, context)
+        else:
+            return self._simple_analyze(prompt, context)
 
     def get_cache_stats(self) -> Dict[str, Any]:
         """Get cache statistics."""
