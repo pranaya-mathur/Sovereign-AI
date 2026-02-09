@@ -86,3 +86,81 @@ class StatsResponse(BaseModel):
     tier3_count: int = Field(..., description="Tier 3 detection count")
     distribution: Dict[str, float] = Field(..., description="Tier distribution percentages")
     health: Dict[str, Any] = Field(..., description="Health status information")
+
+
+# Authentication Models
+
+class LoginRequest(BaseModel):
+    """Request model for user login."""
+    
+    username: str = Field(..., description="Username", min_length=3, max_length=50)
+    password: str = Field(..., description="Password", min_length=6, max_length=100)
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "username": "admin",
+                "password": "admin123",
+            }
+        }
+
+
+class LoginResponse(BaseModel):
+    """Response model for successful login."""
+    
+    access_token: str = Field(..., description="JWT access token")
+    token_type: str = Field(default="bearer", description="Token type")
+    username: str = Field(..., description="Username")
+    role: str = Field(..., description="User role")
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+                "token_type": "bearer",
+                "username": "admin",
+                "role": "admin",
+            }
+        }
+
+
+class UserResponse(BaseModel):
+    """Response model for user information."""
+    
+    username: str = Field(..., description="Username")
+    email: str = Field(..., description="Email address")
+    role: str = Field(..., description="User role (admin, user, viewer)")
+    rate_limit_tier: str = Field(..., description="Rate limit tier (free, pro, enterprise)")
+    disabled: bool = Field(default=False, description="Whether user is disabled")
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "username": "admin",
+                "email": "admin@llm-obs.local",
+                "role": "admin",
+                "rate_limit_tier": "enterprise",
+                "disabled": False,
+            }
+        }
+
+
+class UserCreateRequest(BaseModel):
+    """Request model for creating a new user."""
+    
+    username: str = Field(..., description="Username", min_length=3, max_length=50)
+    password: str = Field(..., description="Password", min_length=6, max_length=100)
+    email: Optional[str] = Field(None, description="Email address")
+    role: str = Field(default="user", description="User role")
+    rate_limit_tier: str = Field(default="free", description="Rate limit tier")
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "username": "newuser",
+                "password": "securepass123",
+                "email": "newuser@example.com",
+                "role": "user",
+                "rate_limit_tier": "free",
+            }
+        }
