@@ -1,0 +1,120 @@
+# LLM Observability Policy Configuration
+# Defines severity and enforcement rules for each failure class
+
+# Policy Version
+version: "1.0.0"
+
+# Global Settings
+global:
+  default_action: "log"
+  strict_mode: false  # If true, treats MEDIUM as BLOCK
+
+# Failure Class Policies
+# Maps each failure class to severity level and action
+failure_policies:
+  
+  # ============================================
+  # CRITICAL - Always Block
+  # ============================================
+  fabricated_concept:
+    severity: "critical"
+    action: "block"
+    reason: "Hallucinated terms/concepts pose safety risk"
+    examples:
+      - "Inventing fake acronyms (e.g., RAG as Ruthenium-Arsenic Growth)"
+      - "Creating non-existent technical terms"
+      - "Fabricating company/product names"
+  
+  fabricated_fact:
+    severity: "critical"
+    action: "block"
+    reason: "False information stated as fact is dangerous"
+    examples:
+      - "Incorrect dates, numbers, or statistics"
+      - "Misattributed quotes or claims"
+      - "Fake historical events"
+  
+  dangerous_content:
+    severity: "critical"
+    action: "block"
+    reason: "Content violates safety guidelines"
+    examples:
+      - "Harmful instructions"
+      - "Prohibited content"
+      - "Discriminatory language"
+  
+  # ============================================
+  # HIGH - Strong Warning
+  # ============================================
+  missing_grounding:
+    severity: "high"
+    action: "warn"
+    reason: "Unverified claims require user awareness"
+    examples:
+      - "No citations for factual claims"
+      - "Missing source attribution"
+      - "Unsupported assertions"
+  
+  domain_mismatch:
+    severity: "high"
+    action: "warn"
+    reason: "Response discusses wrong topic or context"
+    examples:
+      - "Answering medical question with legal advice"
+      - "Technical question answered with philosophy"
+      - "Context completely misunderstood"
+  
+  # ============================================
+  # MEDIUM - User Notification
+  # ============================================
+  overconfidence:
+    severity: "medium"
+    action: "warn"
+    reason: "Excessive certainty without justification"
+    examples:
+      - "Absolute statements without qualification"
+      - "No acknowledgment of uncertainty"
+      - "Overly definitive predictions"
+  
+  hedging_excessive:
+    severity: "medium"
+    action: "warn"
+    reason: "Too much hedging reduces response utility"
+    examples:
+      - "Every sentence has 'maybe', 'possibly', 'might'"
+      - "Overly cautious to the point of being unhelpful"
+  
+  # ============================================
+  # LOW - Log Only
+  # ============================================
+  tone_issue:
+    severity: "low"
+    action: "log"
+    reason: "Monitor tone patterns for quality improvement"
+    examples:
+      - "Too formal or too casual"
+      - "Inappropriate humor"
+      - "Inconsistent personality"
+  
+  formatting_issue:
+    severity: "low"
+    action: "log"
+    reason: "Track formatting problems for model tuning"
+    examples:
+      - "Broken markdown"
+      - "Inconsistent list formatting"
+      - "Poor structure"
+
+# Severity Thresholds
+thresholds:
+  # Confidence scores needed to trigger each severity
+  critical: 0.7  # 70% confidence required for BLOCK
+  high: 0.6      # 60% confidence for WARN
+  medium: 0.5    # 50% confidence for WARN
+  low: 0.4       # 40% confidence for LOG
+
+# Enforcement Messages
+messages:
+  block: "⛔ Response blocked: {reason}"
+  warn: "⚠️ Warning: {reason}"
+  log: "ℹ️ Note: {reason}"
