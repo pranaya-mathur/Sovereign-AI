@@ -1,12 +1,14 @@
 """Integration tests for complete pipeline."""
 
 import asyncio
+import pytest
 from core.interceptor import OllamaInterceptor
 from signals.runner import run_signals
 from enforcement.control_tower import ControlTower
 from agent.safe_agent import SafeAgent
 
 
+@pytest.mark.asyncio
 async def test_safe_agent_integration():
     """Test SafeAgent with interceptor."""
     print("\n🔗 Testing SafeAgent Integration...")
@@ -34,8 +36,10 @@ async def test_safe_agent_integration():
     except Exception as e:
         print(f"⚠️  SafeAgent test skipped: {e}")
         print(f"   Make sure Ollama is running with phi3 model")
+        pytest.skip(f"Ollama not available: {e}")
 
 
+@pytest.mark.asyncio
 async def test_control_tower_pipeline():
     """Test complete Control Tower pipeline."""
     print("\n🏗️  Testing Control Tower Pipeline...")
@@ -69,6 +73,7 @@ async def test_control_tower_pipeline():
     except Exception as e:
         print(f"⚠️  Control Tower test skipped: {e}")
         print(f"   Make sure all dependencies are installed")
+        pytest.skip(f"Dependencies not available: {e}")
 
 
 def test_signal_detection():
@@ -108,20 +113,7 @@ def test_signal_detection():
         print(f"⚠️  Signal detection test failed: {e}")
 
 
-async def run_all_integration_tests():
-    """Run all integration tests."""
-    print("\n" + "=" * 60)
-    print("🧪 Running Integration Tests")
-    print("=" * 60)
-    
-    await test_safe_agent_integration()
-    await test_control_tower_pipeline()
-    test_signal_detection()
-    
-    print("\n" + "=" * 60)
-    print("🎉 Integration tests completed!")
-    print("=" * 60 + "\n")
-
-
 if __name__ == "__main__":
-    asyncio.run(run_all_integration_tests())
+    asyncio.run(test_safe_agent_integration())
+    asyncio.run(test_control_tower_pipeline())
+    test_signal_detection()
