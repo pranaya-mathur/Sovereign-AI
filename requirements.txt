@@ -3,15 +3,18 @@ httpx>=0.24.0
 pydantic>=2.0.0
 PyYAML>=6.0.0
 
-# Phase 1: Embedding-based detection (Tier 1)
+# Phase 1: Embedding-based detection (Tier 1 & 2)
 sentence-transformers>=2.2.0
 numpy>=1.24.0
 torch>=2.0.0
 
-# Future phases (commented for now)
-# langgraph>=0.0.40
-# langchain>=0.1.0
-# langchain-community>=0.0.20
+# Phase 2: LLM Agent (Tier 3) - 100% Free
+langgraph>=0.0.40
+langchain>=0.1.0
+langchain-community>=0.0.20
+langchain-groq>=0.0.1
+structlog>=23.2.0
+
+# Future phases (API endpoints)
 # fastapi>=0.104.0
 # uvicorn>=0.24.0
-# structlog>=23.2.0
