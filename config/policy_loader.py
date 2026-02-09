@@ -34,7 +34,8 @@ class PolicyLoader:
     def _load_policy(self) -> None:
         """Load policy configuration from YAML file."""
         try:
-            with open(self.config_path, 'r') as f:
+            # Use UTF-8 encoding explicitly to handle emojis and special chars
+            with open(self.config_path, 'r', encoding='utf-8') as f:
                 self._policy = yaml.safe_load(f)
         except FileNotFoundError:
             raise FileNotFoundError(
