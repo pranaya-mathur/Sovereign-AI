@@ -1,0 +1,54 @@
+# Rate Limiting Configuration
+
+# User tier limits (requests per hour)
+tier_limits:
+  free: 100
+  pro: 1000
+  enterprise: 10000
+
+# Detection tier limits (to maintain 95/4/1 distribution)
+detection_tier_limits:
+  tier1: null  # No limit for fast regex detection
+  tier2: 50    # Limit semantic detection to 50/hour per user
+  tier3: 10    # Limit LLM agent detection to 10/hour per user
+
+# Global system limits
+global:
+  max_requests_per_hour: 10000
+  max_concurrent_requests: 100
+
+# Rate limit window
+window:
+  seconds: 3600  # 1 hour
+
+# Burst allowance (for short spikes)
+burst:
+  enabled: true
+  multiplier: 1.2  # Allow 20% burst above limit
+
+# Whitelist (no rate limiting)
+whitelist:
+  - "admin"
+  - "monitoring"
+
+# Custom limits for specific endpoints
+endpoint_limits:
+  "/api/detect":
+    free: 50
+    pro: 500
+    enterprise: 5000
+  
+  "/api/batch_detect":
+    free: 10
+    pro: 100
+    enterprise: 1000
+  
+  "/api/admin/*":
+    free: 0  # Not allowed
+    pro: 0   # Not allowed
+    enterprise: 100
+
+# Response headers
+headers:
+  include_rate_limit_headers: true
+  header_prefix: "X-RateLimit-"
