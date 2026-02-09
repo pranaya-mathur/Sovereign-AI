@@ -26,6 +26,8 @@ class DecisionCache:
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.cache: Dict[str, Dict[str, Any]] = {}
         self.ttl = timedelta(hours=ttl_hours)
+        self.hits = 0
+        self.misses = 0
         self._load_cache()
 
     def _compute_hash(self, prompt: str, context: Dict[str, Any]) -> str:
@@ -46,12 +48,14 @@ class DecisionCache:
             # Check if expired
             if datetime.now() - cached_time < self.ttl:
                 entry["cache_hit"] = True
+                self.hits += 1
                 return entry
             else:
                 # Remove expired entry
                 del self.cache[cache_key]
                 self._save_cache()
 
+        self.misses += 1
         return None
 
     def set(
@@ -115,7 +119,14 @@ class DecisionCache:
 
     def get_stats(self) -> Dict[str, Any]:
         """Get cache statistics."""
+        total_requests = self.hits + self.misses
+        hit_rate = self.hits / total_requests if total_requests > 0 else 0.0
+        
         return {
+            "size": len(self.cache),
+            "hits": self.hits,
+            "misses": self.misses,
+            "hit_rate": hit_rate,
             "total_entries": len(self.cache),
             "cache_dir": str(self.cache_dir),
             "ttl_hours": self.ttl.total_seconds() / 3600,
