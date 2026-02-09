@@ -1,0 +1,83 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: llm-obs-postgres
+    environment:
+      POSTGRES_USER: llm_observability
+      POSTGRES_PASSWORD: changeme_secure_password
+      POSTGRES_DB: llm_observability
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U llm_observability"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - llm-obs-network
+
+  # LLM Observability API
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: llm-obs-api
+    environment:
+      DATABASE_URL: postgresql://llm_observability:changeme_secure_password@postgres:5432/llm_observability
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./config:/app/config:ro
+    networks:
+      - llm-obs-network
+    restart: unless-stopped
+
+  # Prometheus (optional - for monitoring)
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: llm-obs-prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    networks:
+      - llm-obs-network
+    restart: unless-stopped
+
+  # Grafana (optional - for dashboards)
+  grafana:
+    image: grafana/grafana:latest
+    container_name: llm-obs-grafana
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: false
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+    networks:
+      - llm-obs-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  llm-obs-network:
+    driver: bridge
