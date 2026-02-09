@@ -1,5 +1,5 @@
 """FastAPI application for LLM Observability."""
 
-from api.main import app
+from .app import app
 
 __all__ = ["app"]
