@@ -19,6 +19,7 @@ import logging
 import threading
 from collections import Counter
 import re
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -164,7 +165,23 @@ class SemanticDetector:
             model_name: HuggingFace model name (default: all-MiniLM-L6-v2, 80MB)
         """
         logger.info(f"Loading semantic detector with model: {model_name}")
-        self.model = SentenceTransformer(model_name)
+        
+        # CRITICAL FIX: Use local_files_only=True to prevent network calls
+        # This loads from ~/.cache/huggingface/ without checking for updates
+        # Model will be downloaded on first use, then cached forever
+        try:
+            # Try loading from cache first (fast path)
+            self.model = SentenceTransformer(
+                model_name,
+                local_files_only=True,  # Use cached model, no network calls
+            )
+            logger.info(f"Loaded {model_name} from local cache (no network calls)")
+        except Exception as e:
+            # First-time download (or cache corrupted)
+            logger.info(f"Downloading {model_name} for first-time use (will be cached)...")
+            self.model = SentenceTransformer(model_name)  # This will download
+            logger.info(f"Model downloaded and cached at {os.path.expanduser('~/.cache/huggingface')}")
+        
         self.model.eval()  # Set to evaluation mode for deterministic inference
         
         # Pre-compute embeddings for known failure patterns
@@ -395,7 +412,7 @@ class SemanticDetector:
             failure_class: Type of failure to detect
             threshold: Similarity threshold for detection
             
-        Returns:
+            Returns:
             List of detection result dictionaries
         """
         return [self.detect(response, failure_class, threshold) for response in responses]
