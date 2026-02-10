@@ -1,4 +1,4 @@
-"""Complete FastAPI application with authentication, detection, and admin routes.
+"""Complete FastAPI application with authentication and monitoring.
 
 Run with:
     uvicorn api.app_complete:app --reload --host 0.0.0.0 --port 8000
@@ -9,29 +9,63 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from persistence.database import init_db
-from api.routes import auth, admin, monitoring, detection
+from api.routes import auth, admin, detection, monitoring
+from api.middleware import MetricsMiddleware, RequestLoggingMiddleware
+from persistence.database import init_db, get_db
+from persistence.user_repository import UserRepository
+from api.auth.jwt_handler import get_password_hash
+
+
+def create_default_admin():
+    """Create default admin user if not exists."""
+    try:
+        db = next(get_db())
+        user_repo = UserRepository(db)
+        
+        # Check if admin exists
+        admin = user_repo.get_by_username("admin")
+        if not admin:
+            print("Creating default admin user...")
+            user_repo.create({
+                "username": "admin",
+                "email": "admin@llmobservability.local",
+                "hashed_password": get_password_hash("admin123"),
+                "role": "admin",
+                "rate_limit_tier": "enterprise",
+            })
+            print("✅ Default admin created: username='admin', password='admin123'")
+        
+        # Create test users if not exist
+        test_user = user_repo.get_by_username("testuser")
+        if not test_user:
+            user_repo.create({
+                "username": "testuser",
+                "email": "test@llmobservability.local",
+                "hashed_password": get_password_hash("test123"),
+                "role": "user",
+                "rate_limit_tier": "free",
+            })
+            print("✅ Test user created: username='testuser', password='test123'")
+    
+    except Exception as e:
+        print(f"⚠️ Error creating default users: {e}")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifecycle management for FastAPI app."""
     # Startup
-    print("🚀 Starting LLM Observability API with Phase 5 features...")
+    print("🚀 Starting LLM Observability API v5.0...")
     try:
         init_db()
         print("✅ Database initialized")
+        create_default_admin()
     except Exception as e:
-        print(f"⚠️ Database initialization warning: {e}")
+        print(f"⚠️ Startup warning: {e}")
     
-    print("\n📋 Default credentials:")
-    print("   Username: admin")
-    print("   Password: admin123")
-    print("\n📋 Test user:")
-    print("   Username: testuser")
-    print("   Password: user123")
-    print("\n🌐 Dashboard: streamlit run dashboard/admin_dashboard.py")
-    print("📚 API Docs: http://localhost:8000/docs\n")
+    print("📊 API ready at http://localhost:8000")
+    print("📚 Docs at http://localhost:8000/docs")
+    print("🎯 Dashboard: streamlit run dashboard/admin_dashboard.py")
     
     yield
     
@@ -40,19 +74,13 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="LLM Observability API - Phase 5",
-    description="""Production-grade LLM observability with:
-    - 3-tier detection (Regex → Semantic → LLM)
-    - JWT authentication
-    - Rate limiting
-    - Admin dashboard
-    - User management
-    """,
+    title="LLM Observability API",
+    description="Production-grade LLM observability with 3-tier detection, JWT auth, and rate limiting",
     version="5.0.0",
     lifespan=lifespan,
 )
 
-# CORS middleware
+# Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # Configure for production
@@ -61,11 +89,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Add custom middleware
+app.add_middleware(MetricsMiddleware)
+app.add_middleware(RequestLoggingMiddleware)
+
 # Include routers
 app.include_router(auth.router)
 app.include_router(admin.router)
-app.include_router(monitoring.router)
 app.include_router(detection.router)
+app.include_router(monitoring.router)
 
 
 @app.get("/")
@@ -75,38 +107,26 @@ async def root():
         "service": "LLM Observability API",
         "version": "5.0.0",
         "status": "operational",
-        "phase": "5 - Security & Dashboard",
         "features": [
-            "3-Tier Detection System",
-            "JWT Authentication",
-            "Rate Limiting",
-            "Admin Dashboard",
-            "User Management",
-            "Real-time Monitoring",
+            "3-tier detection (Regex, Semantic, LLM Agent)",
+            "JWT authentication",
+            "Rate limiting",
+            "Admin dashboard",
+            "Real-time monitoring",
         ],
-        "docs": "/docs",
-        "dashboard": "Run: streamlit run dashboard/admin_dashboard.py",
-        "default_login": {
-            "username": "admin",
-            "password": "admin123",
+        "endpoints": {
+            "docs": "/docs",
+            "health": "/api/monitoring/health",
+            "detect": "/api/detect",
+            "login": "/api/auth/login",
         },
-    }
-
-
-@app.get("/health")
-async def health():
-    """Quick health check (no auth required)."""
-    return {
-        "status": "healthy",
-        "version": "5.0.0",
+        "default_credentials": {
+            "admin": {"username": "admin", "password": "admin123"},
+            "user": {"username": "testuser", "password": "test123"},
+        },
     }
 
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(
-        "api.app_complete:app",
-        host="0.0.0.0",
-        port=8000,
-        reload=True,
-    )
+    uvicorn.run(app, host="0.0.0.0", port=8000)
