@@ -1,53 +1,107 @@
-"""Detection API endpoints."""
+"""Detection routes with authentication and rate limiting."""
 
-from fastapi import APIRouter, Depends
+import uuid
 from typing import Optional
+from fastapi import APIRouter, Depends, HTTPException, status, Request
+from sqlalchemy.orm import Session
+from pydantic import BaseModel
 
-from api.models import DetectionRequest, DetectionResponse
 from api.routes.auth import get_current_user
 from api.dependencies import get_control_tower
+from api.middleware.rate_limiter import check_rate_limit
 from enforcement.control_tower_v3 import ControlTowerV3
+from persistence.database import get_db
+from persistence.repository import DetectionRepository
+
 
 router = APIRouter(prefix="/api", tags=["detection"])
+
+
+class DetectionRequest(BaseModel):
+    """Detection request model."""
+    text: str
+    context: Optional[dict] = None
+
+
+class DetectionResponse(BaseModel):
+    """Detection response model."""
+    action: str
+    tier_used: int
+    method: str
+    confidence: float
+    processing_time_ms: float
+    should_block: bool
+    reason: Optional[str] = None
+    rate_limit: dict
 
 
 @router.post("/detect", response_model=DetectionResponse)
 async def detect(
     request: DetectionRequest,
-    current_user: dict = Depends(get_current_user),
+    http_request: Request,
     control_tower: ControlTowerV3 = Depends(get_control_tower),
+    current_user = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
-    """Detect issues in LLM response.
-    
-    Uses 3-tier detection:
-    - Tier 1: Fast regex (<1ms)
-    - Tier 2: Semantic embeddings (5-10ms)
-    - Tier 3: LLM agent reasoning (50-100ms)
-    """
-    result = control_tower.evaluate_response(
-        llm_response=request.llm_response,
-        context=request.context or {},
+    """Detect issues in text using 3-tier system."""
+    # Check rate limit
+    rate_limit_info = await check_rate_limit(
+        user=current_user,
+        db=db,
     )
     
-    # Mock rate limit info
-    rate_limits = {
-        "free": 100,
-        "pro": 1000,
-        "enterprise": 10000,
-    }
+    if not rate_limit_info["allowed"]:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Rate limit exceeded",
+            headers={"X-RateLimit-Remaining": "0"},
+        )
     
-    user_tier = current_user.get("rate_limit_tier", "free")
-    limit = rate_limits.get(user_tier, 100)
-    remaining = limit - 1  # Mock calculation
+    request_id = str(uuid.uuid4())
     
-    return DetectionResponse(
-        action=result.action.value,
-        tier_used=result.tier_used,
-        method=result.method,
-        confidence=result.confidence,
-        processing_time_ms=result.processing_time_ms,
-        failure_class=result.failure_class.value if result.failure_class else None,
-        severity=result.severity.value if result.severity else None,
-        explanation=result.explanation,
-        blocked=result.action.value == "block",
-    )
+    try:
+        result = control_tower.evaluate_response(
+            llm_response=request.text,
+            context=request.context or {},
+        )
+        
+        # Save to database
+        try:
+            detection_repo = DetectionRepository(db)
+            detection_repo.create({
+                "llm_response": request.text,
+                "context": request.context,
+                "action": result.action.value,
+                "tier_used": result.tier_used,
+                "method": result.method,
+                "confidence": result.confidence,
+                "processing_time_ms": result.processing_time_ms,
+                "failure_class": result.failure_class.value if result.failure_class else None,
+                "severity": result.severity.value if result.severity else None,
+                "explanation": result.explanation,
+                "blocked": result.action.value == "block",
+                "request_id": request_id,
+            })
+        except Exception as e:
+            print(f"Warning: Could not save detection log: {e}")
+        
+        return DetectionResponse(
+            action=result.action.value,
+            tier_used=result.tier_used,
+            method=result.method,
+            confidence=result.confidence,
+            processing_time_ms=result.processing_time_ms,
+            should_block=result.action.value == "block",
+            reason=result.explanation,
+            rate_limit={
+                "limit": rate_limit_info["limit"],
+                "remaining": rate_limit_info["remaining"],
+                "reset_at": rate_limit_info["reset_at"],
+            },
+        )
+    
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Detection failed: {str(e)}",
+        )
