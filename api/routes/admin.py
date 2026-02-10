@@ -1,84 +1,70 @@
-"""Admin API endpoints."""
+"""Admin routes for user and system management."""
 
+from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from typing import List
 
-from api.models import UserResponse, UserCreateRequest
-from api.routes.auth import require_admin, get_current_user
+from api.routes.auth import get_current_admin_user
+from api.auth.models import UserResponse
 from persistence.database import get_db
-from persistence.user_store import UserStore
+from persistence.user_repository import UserRepository
+
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
 
 @router.get("/users", response_model=List[UserResponse])
-async def list_users(
-    admin: dict = Depends(require_admin),
+async def get_all_users(
     db: Session = Depends(get_db),
+    current_admin = Depends(get_current_admin_user),
 ):
-    """List all users (admin only)."""
-    user_store = UserStore(db)
-    users = user_store.get_all_users()
+    """Get all users (admin only)."""
+    user_repo = UserRepository(db)
+    users = user_repo.get_all()
     
     return [
         UserResponse(
-            username=user["username"],
-            email=user.get("email", ""),
-            role=user["role"],
-            rate_limit_tier=user.get("rate_limit_tier", "free"),
-            disabled=user.get("disabled", False),
+            username=user.username,
+            email=user.email,
+            role=user.role,
+            rate_limit_tier=user.rate_limit_tier,
+            disabled=user.disabled,
         )
         for user in users
     ]
 
 
-@router.post("/users", response_model=UserResponse)
-async def create_user(
-    user_request: UserCreateRequest,
-    admin: dict = Depends(require_admin),
+@router.get("/users/{username}", response_model=UserResponse)
+async def get_user(
+    username: str,
     db: Session = Depends(get_db),
+    current_admin = Depends(get_current_admin_user),
 ):
-    """Create new user (admin only)."""
-    user_store = UserStore(db)
+    """Get user by username (admin only)."""
+    user_repo = UserRepository(db)
+    user = user_repo.get_by_username(username)
     
-    # Check if user already exists
-    existing_user = user_store.get_by_username(user_request.username)
-    if existing_user:
+    if not user:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Username already exists",
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
         )
     
-    try:
-        created_user = user_store.create_user(
-            username=user_request.username,
-            password=user_request.password,
-            email=user_request.email,
-            role=user_request.role,
-            rate_limit_tier=user_request.rate_limit_tier,
-        )
-        
-        return UserResponse(
-            username=created_user["username"],
-            email=created_user.get("email", ""),
-            role=created_user["role"],
-            rate_limit_tier=created_user.get("rate_limit_tier", "free"),
-            disabled=created_user.get("disabled", False),
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to create user: {str(e)}",
-        )
+    return UserResponse(
+        username=user.username,
+        email=user.email,
+        role=user.role,
+        rate_limit_tier=user.rate_limit_tier,
+        disabled=user.disabled,
+    )
 
 
-@router.put("/users/{username}/role")
+@router.put("/users/{username}/role", response_model=UserResponse)
 async def update_user_role(
     username: str,
     role: str,
-    admin: dict = Depends(require_admin),
     db: Session = Depends(get_db),
+    current_admin = Depends(get_current_admin_user),
 ):
     """Update user role (admin only)."""
     if role not in ["admin", "user", "viewer"]:
@@ -87,32 +73,30 @@ async def update_user_role(
             detail="Invalid role. Must be: admin, user, or viewer",
         )
     
-    user_store = UserStore(db)
+    user_repo = UserRepository(db)
+    user = user_repo.update_role(username, role)
     
-    # Check if user exists
-    user = user_store.get_by_username(username)
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found",
         )
     
-    success = user_store.update_role(username, role)
-    if not success:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to update role",
-        )
-    
-    return {"username": username, "role": role, "message": "Role updated successfully"}
+    return UserResponse(
+        username=user.username,
+        email=user.email,
+        role=user.role,
+        rate_limit_tier=user.rate_limit_tier,
+        disabled=user.disabled,
+    )
 
 
-@router.put("/users/{username}/tier")
-async def update_rate_limit_tier(
+@router.put("/users/{username}/tier", response_model=UserResponse)
+async def update_user_tier(
     username: str,
     tier: str,
-    admin: dict = Depends(require_admin),
     db: Session = Depends(get_db),
+    current_admin = Depends(get_current_admin_user),
 ):
     """Update user rate limit tier (admin only)."""
     if tier not in ["free", "pro", "enterprise"]:
@@ -121,91 +105,100 @@ async def update_rate_limit_tier(
             detail="Invalid tier. Must be: free, pro, or enterprise",
         )
     
-    user_store = UserStore(db)
+    user_repo = UserRepository(db)
+    user = user_repo.update_tier(username, tier)
     
-    # Check if user exists
-    user = user_store.get_by_username(username)
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found",
         )
     
-    success = user_store.update_tier(username, tier)
-    if not success:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to update tier",
-        )
-    
-    return {"username": username, "tier": tier, "message": "Tier updated successfully"}
+    return UserResponse(
+        username=user.username,
+        email=user.email,
+        role=user.role,
+        rate_limit_tier=user.rate_limit_tier,
+        disabled=user.disabled,
+    )
 
 
-@router.put("/users/{username}/disable")
+@router.put("/users/{username}/disable", response_model=UserResponse)
 async def disable_user(
     username: str,
-    disabled: bool = True,
-    admin: dict = Depends(require_admin),
     db: Session = Depends(get_db),
+    current_admin = Depends(get_current_admin_user),
 ):
-    """Enable/disable user account (admin only)."""
-    user_store = UserStore(db)
-    
-    # Check if user exists
-    user = user_store.get_by_username(username)
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found",
-        )
-    
-    # Prevent disabling yourself
-    if username == admin["username"]:
+    """Disable user account (admin only)."""
+    if username == current_admin.username:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Cannot disable your own account",
         )
     
-    success = user_store.disable_user(username, disabled)
-    if not success:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to disable user",
-        )
+    user_repo = UserRepository(db)
+    user = user_repo.disable_user(username)
     
-    action = "disabled" if disabled else "enabled"
-    return {"username": username, "disabled": disabled, "message": f"User {action} successfully"}
-
-
-@router.delete("/users/{username}")
-async def delete_user(
-    username: str,
-    admin: dict = Depends(require_admin),
-    db: Session = Depends(get_db),
-):
-    """Delete user account (admin only)."""
-    user_store = UserStore(db)
-    
-    # Check if user exists
-    user = user_store.get_by_username(username)
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found",
         )
     
-    # Prevent deleting yourself
-    if username == admin["username"]:
+    return UserResponse(
+        username=user.username,
+        email=user.email,
+        role=user.role,
+        rate_limit_tier=user.rate_limit_tier,
+        disabled=user.disabled,
+    )
+
+
+@router.put("/users/{username}/enable", response_model=UserResponse)
+async def enable_user(
+    username: str,
+    db: Session = Depends(get_db),
+    current_admin = Depends(get_current_admin_user),
+):
+    """Enable user account (admin only)."""
+    user_repo = UserRepository(db)
+    user = user_repo.enable_user(username)
+    
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        )
+    
+    return UserResponse(
+        username=user.username,
+        email=user.email,
+        role=user.role,
+        rate_limit_tier=user.rate_limit_tier,
+        disabled=user.disabled,
+    )
+
+
+@router.delete("/users/{username}")
+async def delete_user(
+    username: str,
+    db: Session = Depends(get_db),
+    current_admin = Depends(get_current_admin_user),
+):
+    """Delete user (admin only)."""
+    if username == current_admin.username:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Cannot delete your own account",
         )
     
-    success = user_store.delete_user(username)
+    user_repo = UserRepository(db)
+    success = user_repo.delete(username)
+    
     if not success:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to delete user",
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
         )
     
-    return {"username": username, "message": "User deleted successfully"}
+    return {"message": f"User {username} deleted successfully"}
