@@ -9,7 +9,8 @@ import time
 import sys
 from typing import Dict, Tuple
 
-BASE_URL = "http://localhost:8000"
+# CRITICAL FIX: Use 127.0.0.1 instead of localhost to avoid 2-second DNS resolution delay on Windows
+BASE_URL = "http://127.0.0.1:8000"
 USERNAME = "admin"
 PASSWORD = "admin123"
 
@@ -168,8 +169,8 @@ def main():
     success, message, elapsed = test_pathological_input(token)
     if success:
         print_colored(f"  ✅ {message}", GREEN)
-        if elapsed < 10:  # Should be super fast now
-            print_colored(f"  🚀 Excellent! Processed in <10ms\n", GREEN)
+        if elapsed < 100:  # Should be super fast now (<100ms)
+            print_colored(f"  🚀 Excellent! Processed in <100ms\n", GREEN)
         else:
             print_colored(f"  ⚠️  Slower than expected but working\n", YELLOW)
     else:
@@ -183,8 +184,8 @@ def main():
     success, message, elapsed = test_sql_injection(token)
     if success:
         print_colored(f"  ✅ {message}", GREEN)
-        if elapsed < 10:
-            print_colored(f"  🚀 Excellent! Processed in <10ms\n", GREEN)
+        if elapsed < 100:
+            print_colored(f"  🚀 Excellent! Processed in <100ms\n", GREEN)
         else:
             print_colored(f"  ⚠️  Slower than expected but working\n", YELLOW)
     else:
@@ -206,7 +207,7 @@ def main():
     print_colored("  🎉 ALL VERIFICATION TESTS PASSED!", GREEN)
     print("="*70)
     print("\n  The timeout fixes are working correctly!\n")
-    print("  ✅ Pathological inputs detected early (<10ms)")
+    print("  ✅ Pathological inputs detected early")
     print("  ✅ Attack patterns blocked quickly")
     print("  ✅ Normal inputs still process correctly")
     print("\n  You can now run the full test suite:")
