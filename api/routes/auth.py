@@ -1,88 +1,52 @@
-"""Authentication routes for login/logout with JWT.
+"""Authentication routes for JWT-based auth."""
 
-Endpoints:
-    POST /api/auth/login - Authenticate user
-    POST /api/auth/logout - Logout user (optional, JWT is stateless)
-    GET /api/auth/me - Get current user info
-"""
-
-from datetime import datetime, timedelta
-from typing import Optional
+from datetime import timedelta
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from jose import JWTError, jwt
-from passlib.context import CryptContext
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
-from api.models import LoginRequest, LoginResponse, UserResponse
+from api.auth.jwt_handler import (
+    create_access_token,
+    verify_token,
+    get_password_hash,
+    verify_password,
+    ACCESS_TOKEN_EXPIRE_MINUTES,
+)
+from api.auth.models import Token, UserCreate, UserResponse
 from persistence.database import get_db
-from persistence.user_store import UserStore
+from persistence.user_repository import UserRepository
+
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
-
-# Security configuration
-SECRET_KEY = "your-secret-key-change-in-production-use-env-variable"
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 24 hours
-
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-security = HTTPBearer()
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/token")
 
 
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Verify password against hash."""
-    return pwd_context.verify(plain_password, hashed_password)
-
-
-def get_password_hash(password: str) -> str:
-    """Hash password."""
-    return pwd_context.hash(password)
-
-
-def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
-    """Create JWT access token."""
-    to_encode = data.copy()
-    if expires_delta:
-        expire = datetime.utcnow() + expires_delta
-    else:
-        expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-    return encoded_jwt
-
-
-async def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
-    db: Session = Depends(get_db),
-) -> dict:
-    """Get current authenticated user from JWT token."""
-    token = credentials.credentials
+async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)], db: Session = Depends(get_db)):
+    """Get current authenticated user."""
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
     
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        username: str = payload.get("sub")
-        if username is None:
-            raise credentials_exception
-    except JWTError:
+    username = verify_token(token)
+    if username is None:
         raise credentials_exception
     
-    user_store = UserStore(db)
-    user = user_store.get_by_username(username)
-    if user is None:
+    user_repo = UserRepository(db)
+    user = user_repo.get_by_username(username)
+    
+    if user is None or user.disabled:
         raise credentials_exception
     
     return user
 
 
-async def require_admin(current_user: dict = Depends(get_current_user)) -> dict:
-    """Require admin role."""
-    if current_user.get("role") != "admin":
+async def get_current_admin_user(current_user = Depends(get_current_user)):
+    """Get current user and verify admin role."""
+    if current_user.role != "admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin access required",
@@ -90,24 +54,65 @@ async def require_admin(current_user: dict = Depends(get_current_user)) -> dict:
     return current_user
 
 
-@router.post("/login", response_model=LoginResponse)
-async def login(
-    username: str,
-    password: str,
+@router.post("/register", response_model=UserResponse)
+async def register(
+    user_data: UserCreate,
     db: Session = Depends(get_db),
 ):
-    """Authenticate user and return JWT token."""
-    user_store = UserStore(db)
-    user = user_store.get_by_username(username)
+    """Register a new user."""
+    user_repo = UserRepository(db)
     
-    if not user or not verify_password(password, user.get("password_hash", "")):
+    # Check if user exists
+    existing_user = user_repo.get_by_username(user_data.username)
+    if existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Username already registered",
+        )
+    
+    existing_email = user_repo.get_by_email(user_data.email)
+    if existing_email:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email already registered",
+        )
+    
+    # Create user
+    hashed_password = get_password_hash(user_data.password)
+    user = user_repo.create({
+        "username": user_data.username,
+        "email": user_data.email,
+        "hashed_password": hashed_password,
+        "role": "user",  # Default role
+        "rate_limit_tier": "free",  # Default tier
+    })
+    
+    return UserResponse(
+        username=user.username,
+        email=user.email,
+        role=user.role,
+        rate_limit_tier=user.rate_limit_tier,
+        disabled=user.disabled,
+    )
+
+
+@router.post("/token", response_model=Token)
+async def login_for_access_token(
+    form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
+    db: Session = Depends(get_db),
+):
+    """OAuth2 compatible token login, get an access token for future requests."""
+    user_repo = UserRepository(db)
+    user = user_repo.get_by_username(form_data.username)
+    
+    if not user or not verify_password(form_data.password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
     
-    if user.get("disabled", False):
+    if user.disabled:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="User account is disabled",
@@ -115,34 +120,51 @@ async def login(
     
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
-        data={"sub": user["username"], "role": user["role"]},
+        data={"sub": user.username, "role": user.role},
         expires_delta=access_token_expires,
     )
     
-    return LoginResponse(
-        access_token=access_token,
-        token_type="bearer",
-        username=user["username"],
-        role=user["role"],
+    return Token(access_token=access_token, token_type="bearer")
+
+
+@router.post("/login", response_model=Token)
+async def login(
+    username: str,
+    password: str,
+    db: Session = Depends(get_db),
+):
+    """Simple login endpoint for dashboard."""
+    user_repo = UserRepository(db)
+    user = user_repo.get_by_username(username)
+    
+    if not user or not verify_password(password, user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+        )
+    
+    if user.disabled:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="User account is disabled",
+        )
+    
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": user.username, "role": user.role},
+        expires_delta=access_token_expires,
     )
-
-
-@router.post("/logout")
-async def logout(current_user: dict = Depends(get_current_user)):
-    """Logout user (JWT is stateless, so this is informational)."""
-    return {
-        "message": "Logged out successfully",
-        "username": current_user["username"],
-    }
+    
+    return Token(access_token=access_token, token_type="bearer")
 
 
 @router.get("/me", response_model=UserResponse)
-async def get_me(current_user: dict = Depends(get_current_user)):
-    """Get current user information."""
+async def get_me(current_user = Depends(get_current_user)):
+    """Get current user details."""
     return UserResponse(
-        username=current_user["username"],
-        email=current_user.get("email", ""),
-        role=current_user["role"],
-        rate_limit_tier=current_user.get("rate_limit_tier", "free"),
-        disabled=current_user.get("disabled", False),
+        username=current_user.username,
+        email=current_user.email,
+        role=current_user.role,
+        rate_limit_tier=current_user.rate_limit_tier,
+        disabled=current_user.disabled,
     )
