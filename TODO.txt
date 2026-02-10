@@ -1,0 +1,23 @@
+HIGH PRIORITY:
+- Fix the timeout bug on Windows (super annoying)
+- Move test files out of root
+- Add proper error handling in API
+- Write actual tests (current ones are incomplete)
+
+MEDIUM:
+- Refactor tier router
+- Simplify config structure
+- Add logging (currently just print statements)
+- Performance profiling
+
+LOW:
+- Better documentation
+- Deployment guide
+- Docker optimization
+- CI/CD setup
+
+MAYBE:
+- Web UI?
+- Grafana dashboards
+- Support for other LLM providers
+- Plugin system
