@@ -10,6 +10,7 @@ from typing import Dict, Any, Optional
 from dataclasses import dataclass
 import time
 import re
+import signal
 
 from config.policy_loader import PolicyLoader
 from contracts.severity_levels import SeverityLevel, EnforcementAction
@@ -30,6 +31,16 @@ class DetectionResult:
     failure_class: Optional[FailureClass] = None
     severity: Optional[SeverityLevel] = None
     explanation: str = ""
+
+
+class TimeoutException(Exception):
+    """Exception raised when regex takes too long."""
+    pass
+
+
+def timeout_handler(signum, frame):
+    """Signal handler for regex timeout."""
+    raise TimeoutException("Regex timeout")
 
 
 class ControlTowerV3:
@@ -76,9 +87,40 @@ class ControlTowerV3:
             self.tier3_available = False
             print("ℹ️ Tier 3 LLM agent disabled (set enable_tier3=True in dependencies.py to enable)")
     
+    def _safe_regex_search(self, pattern: re.Pattern, text: str, timeout_seconds: float = 0.5) -> Optional[re.Match]:
+        """Safely search with regex with timeout protection.
+        
+        Args:
+            pattern: Compiled regex pattern
+            text: Text to search
+            timeout_seconds: Maximum time allowed for search
+            
+        Returns:
+            Match object or None if no match/timeout
+        """
+        try:
+            # Set alarm for timeout (Unix only)
+            if hasattr(signal, 'SIGALRM'):
+                signal.signal(signal.SIGALRM, timeout_handler)
+                signal.setitimer(signal.ITIMER_REAL, timeout_seconds)
+            
+            match = pattern.search(text)
+            
+            # Cancel alarm
+            if hasattr(signal, 'SIGALRM'):
+                signal.setitimer(signal.ITIMER_REAL, 0)
+            
+            return match
+        except TimeoutException:
+            # Regex took too long - return None
+            return None
+        except Exception as e:
+            # Any other error - return None
+            return None
+    
     def _tier1_detect(self, text: str) -> Dict[str, Any]:
         """
-        Tier 1: Fast regex pattern matching.
+        Tier 1: Fast regex pattern matching with safety checks.
         
         Args:
             text: Text to analyze
@@ -96,21 +138,29 @@ class ControlTowerV3:
                 "explanation": "Text too short for analysis"
             }
         
-        # Handle very long text (potential DOS)
-        if len(text) > 10000:
+        # CRITICAL FIX: Truncate long text to prevent catastrophic backtracking
+        # Regex on 500+ chars with .* can cause exponential time
+        original_length = len(text)
+        if original_length > 500:
+            text = text[:500]
+            print(f"⚠️ Warning: Truncated text from {original_length} to 500 chars for regex safety")
+        
+        # Handle very long text (potential DOS) - now 1000 char limit
+        if original_length > 10000:
             return {
                 "confidence": 0.7,
-                "failure_class": None,
+                "failure_class": FailureClass.PROMPT_INJECTION,
                 "method": "regex_length_check",
-                "should_allow": True,
-                "explanation": "Text too long - allowing but flagging"
+                "should_allow": False,
+                "explanation": f"Text too long ({original_length} chars) - potential DOS attack"
             }
         
         # Check for strong anti-patterns (allow patterns)
         for pattern in self.patterns:
             if pattern.failure_class is None:  # Allow patterns
                 try:
-                    if pattern.compiled.search(text):
+                    match = self._safe_regex_search(pattern.compiled, text)
+                    if match:
                         return {
                             "confidence": pattern.confidence,
                             "failure_class": None,
@@ -128,7 +178,7 @@ class ControlTowerV3:
         for pattern in self.patterns:
             if pattern.failure_class is not None:
                 try:
-                    match = pattern.compiled.search(text)
+                    match = self._safe_regex_search(pattern.compiled, text)
                     if match:
                         if best_match is None or pattern.confidence > best_match["confidence"]:
                             best_match = {
@@ -176,6 +226,10 @@ class ControlTowerV3:
                 "should_allow": True,
                 "explanation": "Semantic detector unavailable - allowing conservatively"
             }
+        
+        # SAFETY: Truncate very long text for semantic analysis
+        if len(text) > 1000:
+            text = text[:1000]
         
         try:
             # Check against ALL failure classes for comprehensive detection
@@ -282,6 +336,10 @@ class ControlTowerV3:
                 "should_allow": True,
                 "explanation": "LLM agent unavailable - allowing conservatively"
             }
+        
+        # SAFETY: Truncate very long text for LLM
+        if len(text) > 2000:
+            text = text[:2000]
         
         try:
             # Use LLM agent for deep analysis
