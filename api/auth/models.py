@@ -1,6 +1,7 @@
 """Pydantic models for authentication."""
 
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, field_validator
+from typing import Optional
 
 
 class Token(BaseModel):
@@ -11,14 +12,24 @@ class Token(BaseModel):
 
 class TokenData(BaseModel):
     """Token payload data."""
-    username: str | None = None
-    role: str | None = None
+    username: Optional[str] = None
+    role: Optional[str] = None
 
 
 class UserBase(BaseModel):
     """Base user model."""
     username: str
-    email: EmailStr
+    email: str  # Changed from EmailStr to allow .local domains
+    
+    @field_validator('email')
+    @classmethod
+    def validate_email(cls, v: str) -> str:
+        """Validate email format (relaxed for development)."""
+        if '@' not in v:
+            raise ValueError('Invalid email format')
+        if len(v) < 3:
+            raise ValueError('Email too short')
+        return v.lower()
 
 
 class UserCreate(UserBase):
@@ -38,7 +49,19 @@ class UserResponse(UserBase):
 
 class UserUpdate(BaseModel):
     """User update model."""
-    email: EmailStr | None = None
-    role: str | None = None
-    rate_limit_tier: str | None = None
-    disabled: bool | None = None
+    email: Optional[str] = None
+    role: Optional[str] = None
+    rate_limit_tier: Optional[str] = None
+    disabled: Optional[bool] = None
+    
+    @field_validator('email')
+    @classmethod
+    def validate_email(cls, v: Optional[str]) -> Optional[str]:
+        """Validate email format (relaxed for development)."""
+        if v is None:
+            return v
+        if '@' not in v:
+            raise ValueError('Invalid email format')
+        if len(v) < 3:
+            raise ValueError('Email too short')
+        return v.lower()
