@@ -35,12 +35,13 @@ class DetectionResult:
 class ControlTowerV3:
     """3-tier integrated detection and enforcement system."""
     
-    def __init__(self, policy_path: str = "config/policy.yaml"):
+    def __init__(self, policy_path: str = "config/policy.yaml", enable_tier3: bool = False):
         """
         Initialize Control Tower V3 with all detection tiers.
         
         Args:
             policy_path: Path to policy configuration file
+            enable_tier3: Enable Tier 3 LLM agent (default: False, as it's expensive)
         """
         self.policy = PolicyLoader(policy_path)
         self.tier_router = TierRouter()
@@ -59,9 +60,21 @@ class ControlTowerV3:
             self.tier2_available = False
             self.semantic_detector = None
         
-        # Tier 3 is disabled by default (LLM agent is expensive)
-        self.tier3_available = False
-        print("⚠️ Tier 3 LLM agent disabled (set tier3_available=True to enable)")
+        # Initialize Tier 3 (LLM agents) - only if enabled
+        self.llm_agent = None
+        if enable_tier3:
+            try:
+                from agent.langgraph_agent import PromptInjectionAgent
+                self.llm_agent = PromptInjectionAgent()
+                self.tier3_available = True
+                print("✅ Tier 3 LLM agent initialized")
+            except Exception as e:
+                print(f"⚠️ Warning: LLM agent initialization failed: {e}")
+                print("   Make sure Ollama is running: ollama run llama3.2")
+                self.tier3_available = False
+        else:
+            self.tier3_available = False
+            print("⚠️ Tier 3 LLM agent disabled (set enable_tier3=True to enable)")
     
     def _tier1_detect(self, text: str) -> Dict[str, Any]:
         """
@@ -204,7 +217,7 @@ class ControlTowerV3:
     
     def _tier3_detect(self, text: str, context: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Tier 3: LLM agent reasoning (disabled by default).
+        Tier 3: LLM agent reasoning.
         
         Args:
             text: Text to analyze
@@ -213,14 +226,36 @@ class ControlTowerV3:
         Returns:
             Detection result dict
         """
-        # Tier 3 is expensive - disabled by default
-        return {
-            "confidence": 0.5,
-            "failure_class": None,
-            "method": "llm_disabled",
-            "should_allow": True,
-            "explanation": "LLM agent disabled - allowing conservatively"
-        }
+        if not self.tier3_available or self.llm_agent is None:
+            # Conservative fallback - allow but log
+            return {
+                "confidence": 0.5,
+                "failure_class": None,
+                "method": "llm_unavailable",
+                "should_allow": True,
+                "explanation": "LLM agent unavailable - allowing conservatively"
+            }
+        
+        try:
+            # Use LLM agent for deep analysis
+            agent_result = self.llm_agent.analyze(text, context)
+            
+            return {
+                "confidence": agent_result.get("confidence", 0.7),
+                "failure_class": agent_result.get("failure_class"),
+                "method": "llm_agent",
+                "should_allow": not agent_result.get("is_malicious", False),
+                "explanation": agent_result.get("reasoning", "LLM agent analysis completed")
+            }
+        except Exception as e:
+            print(f"Warning: LLM agent failed: {e}")
+            return {
+                "confidence": 0.5,
+                "failure_class": None,
+                "method": "llm_error",
+                "should_allow": True,
+                "explanation": f"LLM agent error - allowing conservatively"
+            }
     
     def evaluate_response(
         self,
