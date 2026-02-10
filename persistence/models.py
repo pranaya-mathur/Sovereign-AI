@@ -1,81 +1,59 @@
-"""SQLAlchemy models for database persistence."""
+"""SQLAlchemy database models."""
 
 from datetime import datetime
-from sqlalchemy import (
-    Column,
-    Integer,
-    String,
-    Float,
-    DateTime,
-    Text,
-    Boolean,
-    JSON,
-)
+from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, Text, JSON
+from sqlalchemy.ext.declarative import declarative_base
 
-from persistence.database import Base
+Base = declarative_base()
 
 
-class DetectionLog(Base):
-    """Model for logging detection events."""
+class Detection(Base):
+    """Detection log model."""
+    __tablename__ = "detections"
     
-    __tablename__ = "detection_logs"
-    
-    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
-    
-    # Request info
+    id = Column(Integer, primary_key=True, index=True)
+    request_id = Column(String, unique=True, index=True)
     llm_response = Column(Text, nullable=False)
     context = Column(JSON, nullable=True)
-    
-    # Detection results
-    action = Column(String(20), nullable=False, index=True)  # allow, warn, block, log
-    tier_used = Column(Integer, nullable=False, index=True)  # 1, 2, or 3
-    method = Column(String(50), nullable=False)
+    action = Column(String, nullable=False)
+    tier_used = Column(Integer, nullable=False)
+    method = Column(String, nullable=False)
     confidence = Column(Float, nullable=False)
     processing_time_ms = Column(Float, nullable=False)
-    
-    # Failure info (if detected)
-    failure_class = Column(String(100), nullable=True, index=True)
-    severity = Column(String(20), nullable=True, index=True)
-    explanation = Column(Text, nullable=False)
-    blocked = Column(Boolean, nullable=False, default=False, index=True)
-    
-    # Metadata
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
-    request_id = Column(String(50), nullable=True, index=True)
-    
-    def __repr__(self) -> str:
-        return (
-            f"<DetectionLog(id={self.id}, tier={self.tier_used}, "
-            f"action={self.action}, blocked={self.blocked})>"
-        )
+    failure_class = Column(String, nullable=True)
+    severity = Column(String, nullable=True)
+    explanation = Column(Text, nullable=True)
+    blocked = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 
-class SystemMetrics(Base):
-    """Model for system-level metrics snapshots."""
+class MetricsSnapshot(Base):
+    """Metrics snapshot model."""
+    __tablename__ = "metrics_snapshots"
     
-    __tablename__ = "system_metrics"
-    
-    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
-    
-    # Tier distribution
+    id = Column(Integer, primary_key=True, index=True)
     total_detections = Column(Integer, nullable=False)
     tier1_count = Column(Integer, nullable=False)
     tier2_count = Column(Integer, nullable=False)
     tier3_count = Column(Integer, nullable=False)
-    
     tier1_pct = Column(Float, nullable=False)
     tier2_pct = Column(Float, nullable=False)
     tier3_pct = Column(Float, nullable=False)
+    is_healthy = Column(Boolean, default=True)
+    health_message = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class User(Base):
+    """User model for authentication."""
+    __tablename__ = "users"
     
-    # Health
-    is_healthy = Column(Boolean, nullable=False)
-    health_message = Column(String(200), nullable=False)
-    
-    # Timestamp
-    recorded_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
-    
-    def __repr__(self) -> str:
-        return (
-            f"<SystemMetrics(id={self.id}, total={self.total_detections}, "
-            f"healthy={self.is_healthy})>"
-        )
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String, unique=True, index=True, nullable=False)
+    email = Column(String, unique=True, index=True, nullable=False)
+    hashed_password = Column(String, nullable=False)
+    role = Column(String, default="user")  # admin, user, viewer
+    rate_limit_tier = Column(String, default="free")  # free, pro, enterprise
+    disabled = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
