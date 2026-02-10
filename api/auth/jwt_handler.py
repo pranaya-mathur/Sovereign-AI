@@ -5,7 +5,16 @@ from typing import Optional
 import os
 
 from jose import JWTError, jwt
-from passlib.context import CryptContext
+
+try:
+    # Try passlib first (preferred)
+    from passlib.context import CryptContext
+    pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+    USE_PASSLIB = True
+except Exception:
+    # Fallback to bcrypt directly
+    import bcrypt
+    USE_PASSLIB = False
 
 
 # JWT Configuration
@@ -13,18 +22,34 @@ SECRET_KEY = os.getenv("JWT_SECRET_KEY", "your-secret-key-change-in-production-u
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 24 hours
 
-# Password hashing
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verify a password against a hash."""
-    return pwd_context.verify(plain_password, hashed_password)
+    if USE_PASSLIB:
+        return pwd_context.verify(plain_password, hashed_password)
+    else:
+        # Use bcrypt directly
+        return bcrypt.checkpw(
+            plain_password.encode('utf-8'),
+            hashed_password.encode('utf-8')
+        )
 
 
 def get_password_hash(password: str) -> str:
-    """Hash a password."""
-    return pwd_context.hash(password)
+    """Hash a password.
+    
+    Note: bcrypt has a 72-byte limit, so we truncate if needed.
+    """
+    # Truncate to 72 bytes (bcrypt limit)
+    password_bytes = password.encode('utf-8')[:72]
+    
+    if USE_PASSLIB:
+        return pwd_context.hash(password_bytes.decode('utf-8'))
+    else:
+        # Use bcrypt directly
+        salt = bcrypt.gensalt()
+        hashed = bcrypt.hashpw(password_bytes, salt)
+        return hashed.decode('utf-8')
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
