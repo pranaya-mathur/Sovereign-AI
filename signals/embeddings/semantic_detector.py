@@ -10,13 +10,12 @@ Key Features:
 - High ROI: 50-70% accuracy improvement over regex
 """
 
-from typing import Dict, Any, List, Tuple
+from typing import Dict, Any, List, Tuple, Optional
 import numpy as np
 from sentence_transformers import SentenceTransformer
 from functools import lru_cache
 import logging
-import signal
-from contextlib import contextmanager
+import threading
 
 logger = logging.getLogger(__name__)
 
@@ -26,28 +25,43 @@ class TimeoutException(Exception):
     pass
 
 
-@contextmanager
-def timeout_context(seconds):
-    """Context manager for timing out operations.
+def run_with_timeout(func, args=(), kwargs=None, timeout=2.0):
+    """Run a function with timeout (works on Windows and Unix).
     
     Args:
-        seconds: Maximum time allowed
+        func: Function to run
+        args: Positional arguments
+        kwargs: Keyword arguments
+        timeout: Timeout in seconds
+        
+    Returns:
+        Function result or raises TimeoutException
     """
-    def timeout_handler(signum, frame):
-        raise TimeoutException("Operation timed out")
+    if kwargs is None:
+        kwargs = {}
     
-    # Set up timeout (Unix only - Windows will skip this)
-    if hasattr(signal, 'SIGALRM'):
-        old_handler = signal.signal(signal.SIGALRM, timeout_handler)
-        signal.alarm(seconds)
+    result = [None]
+    exception = [None]
+    
+    def target():
         try:
-            yield
-        finally:
-            signal.alarm(0)
-            signal.signal(signal.SIGALRM, old_handler)
-    else:
-        # Windows - no timeout protection, just yield
-        yield
+            result[0] = func(*args, **kwargs)
+        except Exception as e:
+            exception[0] = e
+    
+    thread = threading.Thread(target=target)
+    thread.daemon = True
+    thread.start()
+    thread.join(timeout)
+    
+    if thread.is_alive():
+        # Thread is still running - timeout occurred
+        raise TimeoutException(f"Function timed out after {timeout} seconds")
+    
+    if exception[0]:
+        raise exception[0]
+    
+    return result[0]
 
 
 class SemanticDetector:
@@ -175,6 +189,34 @@ class SemanticDetector:
         
         return embeddings
     
+    def _encode_text_safe(self, text: str) -> Optional[np.ndarray]:
+        """Safely encode text with timeout protection (Windows-compatible).
+        
+        Args:
+            text: Text to encode
+            
+        Returns:
+            Encoded embedding or None if timeout/error
+        """
+        try:
+            # Use threading-based timeout (works on Windows)
+            embedding = run_with_timeout(
+                self.model.encode,
+                args=([text],),
+                kwargs={
+                    'normalize_embeddings': True,
+                    'show_progress_bar': False
+                },
+                timeout=2.0  # 2 second timeout
+            )
+            return embedding[0]
+        except TimeoutException:
+            logger.warning(f"Embedding computation timed out for text (len={len(text)})")
+            return None
+        except Exception as e:
+            logger.warning(f"Embedding computation failed: {e}")
+            return None
+    
     def _compute_similarity(self, text: str, failure_class: str) -> Tuple[float, str]:
         """Compute semantic similarity between text and failure patterns.
         
@@ -188,16 +230,10 @@ class SemanticDetector:
         if failure_class not in self.pattern_embeddings:
             return 0.0, f"Unknown failure class: {failure_class}"
         
-        try:
-            # Encode with timeout protection (2 seconds max)
-            with timeout_context(2):
-                text_embedding = self.model.encode(
-                    [text], 
-                    normalize_embeddings=True,
-                    show_progress_bar=False
-                )[0]
-        except (TimeoutException, Exception) as e:
-            logger.warning(f"Embedding computation timed out or failed: {e}")
+        # Encode with timeout protection (works on Windows and Unix)
+        text_embedding = self._encode_text_safe(text)
+        
+        if text_embedding is None:
             return 0.0, "Embedding computation timeout - text may be pathological"
         
         # Calculate cosine similarity with all pattern embeddings
