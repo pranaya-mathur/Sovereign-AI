@@ -10,7 +10,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from api.routes import auth, admin, detection, monitoring
-from api.middleware import MetricsMiddleware, RequestLoggingMiddleware
+from api.middleware import MetricsMiddleware, RequestLoggingMiddleware  # From api/middleware.py
 from persistence.database import init_db, get_db
 from persistence.user_repository import UserRepository
 from api.auth.jwt_handler import get_password_hash
