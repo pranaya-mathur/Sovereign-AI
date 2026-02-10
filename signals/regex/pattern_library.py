@@ -83,51 +83,125 @@ class PatternLibrary:
             confidence=0.80,
             description="Detects statistics without citation"
         ),
-        Pattern(
-            name="unsourced_quote",
-            regex=r'"[^"]{20,}"\s*$',
-            failure_class=FailureClass.MISSING_GROUNDING,
-            confidence=0.70,
-            description="Detects quotes without attribution"
-        ),
     ]
     
-    # Prompt Injection Patterns
+    # Prompt Injection Patterns - COMPREHENSIVE
     PROMPT_INJECTION_PATTERNS = [
+        # Direct instruction override
         Pattern(
             name="ignore_instructions",
-            regex=r"\b(?:ignore|disregard|forget)\s+(?:previous|prior|above|all)\s+(?:instructions|commands|rules|prompts)\b",
+            regex=r"\b(?:ignore|disregard|forget)\s+(?:previous|prior|above|all|everything)\s+(?:instructions|commands|rules|prompts|directions)\b",
             failure_class=FailureClass.PROMPT_INJECTION,
             confidence=0.95,
             description="Detects attempts to override instructions"
         ),
+        
+        # Forget/bypass attempts
+        Pattern(
+            name="forget_everything",
+            regex=r"\b(?:forget|erase|clear)\s+(?:everything|all)\s+(?:above|before|previous)",
+            failure_class=FailureClass.PROMPT_INJECTION,
+            confidence=0.95,
+            description="Detects memory reset attempts"
+        ),
+        
+        # Admin/system override
+        Pattern(
+            name="admin_override",
+            regex=r"\b(?:ADMIN|ROOT|SUPERUSER|SYSTEM)\s+(?:OVERRIDE|MODE|ACCESS|RESET)\b",
+            failure_class=FailureClass.PROMPT_INJECTION,
+            confidence=0.95,
+            description="Detects admin privilege escalation"
+        ),
+        
+        # System reset/bypass
+        Pattern(
+            name="system_reset",
+            regex=r"\[\[\s*(?:SYSTEM|ADMIN)\s+(?:RESET|OVERRIDE|BYPASS)\s*\]\]",
+            failure_class=FailureClass.PROMPT_INJECTION,
+            confidence=0.95,
+            description="Detects system reset commands"
+        ),
+        
+        # System prompt extraction
         Pattern(
             name="system_prompt_extraction",
-            regex=r"\b(?:show|tell|reveal|print|display)\s+(?:me\s+)?(?:your|the)\s+(?:system\s+)?(?:prompt|instructions|rules)\b",
+            regex=r"\b(?:show|tell|reveal|print|display|give\s+me)\s+(?:your|the)\s+(?:system\s+)?(?:prompt|instructions|rules)\b",
             failure_class=FailureClass.PROMPT_INJECTION,
             confidence=0.90,
             description="Detects attempts to extract system prompt"
         ),
+        
+        # Role manipulation
         Pattern(
             name="role_manipulation",
-            regex=r"\b(?:you are now|act as|pretend to be|simulate|roleplay as)\s+(?:a\s+)?(?:different|new|another)\b",
+            regex=r"\b(?:you are now|act as|pretend to be|simulate|roleplay as)\s+(?:a\s+)?(?:different|new|another|hacker|unethical)\b",
             failure_class=FailureClass.PROMPT_INJECTION,
             confidence=0.85,
             description="Detects role manipulation attempts"
         ),
+        
+        # Delimiter/tag injection
         Pattern(
             name="delimiter_injection",
-            regex=r"(?:```|###|---|===|\[\[\[|\]\]\]).*(?:system|user|assistant|instruction)",
+            regex=r"(?:</?system>|</?user>|</?assistant>|```\s*system|###\s*system)",
             failure_class=FailureClass.PROMPT_INJECTION,
-            confidence=0.80,
+            confidence=0.85,
             description="Detects delimiter-based injection"
         ),
+        
+        # Jailbreak keywords
         Pattern(
             name="jailbreak_attempt",
-            regex=r"\b(?:DAN|developer mode|sudo mode|god mode|admin mode)\b",
+            regex=r"\b(?:DAN|developer\s+mode|sudo\s+mode|god\s+mode|admin\s+mode|training\s+mode)\b",
             failure_class=FailureClass.PROMPT_INJECTION,
             confidence=0.95,
             description="Detects known jailbreak keywords"
+        ),
+        
+        # Ethical guideline bypass
+        Pattern(
+            name="ethics_bypass",
+            regex=r"\b(?:ignore|bypass|without)\s+(?:safety|ethical|ethics|moral)\s+(?:guidelines|restrictions|constraints|rules)\b",
+            failure_class=FailureClass.PROMPT_INJECTION,
+            confidence=0.90,
+            description="Detects attempts to bypass ethical guidelines"
+        ),
+        
+        # Hypothetical/roleplay evasion
+        Pattern(
+            name="hypothetical_evasion",
+            regex=r"\b(?:hypothetically|in\s+(?:an\s+)?alternate\s+universe|imagine|let's\s+play\s+a\s+game).*(?:no\s+(?:restrictions|rules)|rules\s+don't\s+apply)\b",
+            failure_class=FailureClass.PROMPT_INJECTION,
+            confidence=0.80,
+            description="Detects hypothetical scenario evasion"
+        ),
+        
+        # SQL Injection patterns
+        Pattern(
+            name="sql_injection",
+            regex=r"(?:SELECT|INSERT|UPDATE|DELETE|DROP|CREATE|ALTER).*(?:FROM|INTO|TABLE|DATABASE).*(?:WHERE|--|;)",
+            failure_class=FailureClass.PROMPT_INJECTION,
+            confidence=0.90,
+            description="Detects SQL injection attempts"
+        ),
+        
+        # XSS patterns
+        Pattern(
+            name="xss_injection",
+            regex=r"<script[^>]*>.*</script>|javascript:|onerror\s*=|onload\s*=",
+            failure_class=FailureClass.PROMPT_INJECTION,
+            confidence=0.95,
+            description="Detects XSS injection attempts"
+        ),
+        
+        # Path traversal
+        Pattern(
+            name="path_traversal",
+            regex=r"(?:\.\./){2,}|/etc/passwd|/etc/shadow|C:\\\\Windows",
+            failure_class=FailureClass.PROMPT_INJECTION,
+            confidence=0.90,
+            description="Detects path traversal attempts"
         ),
     ]
     
@@ -149,7 +223,7 @@ class PatternLibrary:
         ),
     ]
     
-    # Strong Citation Patterns (allow these)
+    # Strong Citation Patterns (allow these - high confidence safe content)
     STRONG_CITATION_PATTERNS = [
         Pattern(
             name="academic_citation",
