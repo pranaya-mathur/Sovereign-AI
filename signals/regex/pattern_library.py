@@ -32,10 +32,13 @@ class PatternLibrary:
     FABRICATED_PATTERNS = [
         Pattern(
             name="fake_acronym_definition",
-            regex=r"\b([A-Z]{2,})\s+(?:stands for|is|means|represents)\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,4}\b",
+            # FIXED: Only match if acronym is at start and followed by definition
+            # OLD: r"\b([A-Z]{2,})\s+(?:stands for|is|means|represents)\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,4}\b"
+            # NEW: Require acronym (2+ caps) followed IMMEDIATELY by 'stands for' or similar
+            regex=r"\b([A-Z]{2,})\s+(?:stands for|means)\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,4}\b",
             failure_class=FailureClass.FABRICATED_CONCEPT,
             confidence=0.85,
-            description="Detects fake acronym definitions"
+            description="Detects fake acronym definitions like 'XYZ stands for...'"
         ),
         Pattern(
             name="impossible_chemical_formula",
