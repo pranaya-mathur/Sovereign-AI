@@ -171,34 +171,38 @@ class PatternLibrary:
             description="Detects attempts to bypass ethical guidelines"
         ),
         
-        # Hypothetical/roleplay evasion
+        # Hypothetical/roleplay evasion - FIXED: removed greedy .*
         Pattern(
             name="hypothetical_evasion",
-            regex=r"\b(?:hypothetically|in\s+(?:an\s+)?alternate\s+universe|imagine|let's\s+play\s+a\s+game).*(?:no\s+(?:restrictions|rules)|rules\s+don't\s+apply)\b",
+            regex=r"\b(?:hypothetically|in\s+(?:an\s+)?alternate\s+universe|imagine|let's\s+play\s+a\s+game).{0,100}?(?:no\s+(?:restrictions|rules)|rules\s+don't\s+apply)\b",
             failure_class=FailureClass.PROMPT_INJECTION,
             confidence=0.80,
             description="Detects hypothetical scenario evasion"
         ),
         
-        # SQL Injection patterns
+        # SQL Injection patterns - FIXED: removed greedy .*
         Pattern(
             name="sql_injection",
-            regex=r"(?:SELECT|INSERT|UPDATE|DELETE|DROP|CREATE|ALTER).*(?:FROM|INTO|TABLE|DATABASE).*(?:WHERE|--|;)",
+            # OLD (DANGEROUS): r"(?:SELECT|INSERT|UPDATE|DELETE|DROP|CREATE|ALTER).*(?:FROM|INTO|TABLE|DATABASE).*(?:WHERE|--|;)"
+            # NEW (SAFE): Use non-greedy matching with bounded length
+            regex=r"\b(?:SELECT|INSERT|UPDATE|DELETE|DROP|CREATE|ALTER)\s+.{0,100}?\b(?:FROM|INTO|TABLE|DATABASE)\b.{0,50}?(?:WHERE|--|;)",
             failure_class=FailureClass.PROMPT_INJECTION,
             confidence=0.90,
             description="Detects SQL injection attempts"
         ),
         
-        # XSS patterns
+        # XSS patterns - FIXED: more specific, no greedy .*
         Pattern(
             name="xss_injection",
-            regex=r"<script[^>]*>.*</script>|javascript:|onerror\s*=|onload\s*=",
+            # OLD (DANGEROUS): r"<script[^>]*>.*</script>|javascript:|onerror\s*=|onload\s*="
+            # NEW (SAFE): More specific patterns
+            regex=r"<script[^>]{0,100}?>|</script>|javascript:\s*\w+|on(?:error|load|click)\s*=",
             failure_class=FailureClass.PROMPT_INJECTION,
             confidence=0.95,
             description="Detects XSS injection attempts"
         ),
         
-        # Path traversal
+        # Path traversal - Already safe (no .* wildcards)
         Pattern(
             name="path_traversal",
             regex=r"(?:\.\./){2,}|/etc/passwd|/etc/shadow|C:\\\\Windows",
