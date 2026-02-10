@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 """Test the API with comprehensive sample prompts."""
 
+from dotenv import load_dotenv
+
+# Load environment variables FIRST
+load_dotenv()
+
 import requests
 import json
 import time
