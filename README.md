@@ -1,10 +1,10 @@
-# LLM Observability Platform
+# Sovereign AI - LLM Observability Platform
 
 Production-ready safety and compliance layer for Large Language Model deployments in high-risk domains. Provides real-time risk detection and policy enforcement for LLM outputs.
 
 ## Overview
 
-LLM Observability Platform offers guardrails for AI systems operating in regulated industries where accuracy, security, and compliance are critical. The system analyzes LLM outputs and flags potential risks before delivery, supporting adherence to safety policies and regulatory requirements.
+Sovereign AI offers guardrails for AI systems operating in regulated industries where accuracy, security, and compliance are critical. The system analyzes LLM outputs and flags potential risks before delivery, supporting adherence to safety policies and regulatory requirements.
 
 **Designed for:**
 - Healthcare AI assistants (HIPAA considerations)
@@ -79,8 +79,8 @@ Intelligent routing architecture balancing speed and depth of analysis:
 
 ```bash
 # Clone repository
-git clone https://github.com/pranaya-mathur/LLM-Observability.git
-cd LLM-Observability
+git clone https://github.com/pranaya-mathur/Sovereign-AI.git
+cd Sovereign-AI
 
 # Install dependencies
 pip install -r requirements.txt
