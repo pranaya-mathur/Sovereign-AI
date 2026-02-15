@@ -1,10 +1,10 @@
 # Sovereign AI - LLM Observability Platform
 
-Production-ready safety and compliance layer for Large Language Model deployments in high-risk domains. Provides real-time risk detection and policy enforcement for LLM outputs.
+Production-ready safety and compliance layer for Large Language Model deployments in high-risk domains. Provides real-time risk detection and policy enforcement for LLM outputs through a signals-based detection pipeline.
 
 ## Overview
 
-Sovereign AI offers guardrails for AI systems operating in regulated industries where accuracy, security, and compliance are critical. The system analyzes LLM outputs and flags potential risks before delivery, supporting adherence to safety policies and regulatory requirements.
+Sovereign AI offers guardrails for AI systems operating in regulated industries where accuracy, security, and compliance are critical. The system analyzes LLM outputs through parallel signal extraction, rule-based evaluation, and configurable enforcement actions.
 
 **Designed for:**
 - Healthcare AI assistants (HIPAA considerations)
@@ -16,10 +16,10 @@ Sovereign AI offers guardrails for AI systems operating in regulated industries 
 ## Core Capabilities
 
 ### Risk Detection
-- **Potential Fabrications**: Flags suspicious claims, statistics, and assertions
-- **Concept Validation**: Detects potentially invented terms and entities
-- **Source Attribution**: Identifies unsupported assertions requiring citations
-- **Domain Alignment**: Checks if responses align with expected subject matter
+- **Fabrication Detection**: Identifies potentially invented facts, concepts, and entities
+- **Grounding Validation**: Detects claims lacking proper source attribution
+- **Domain Alignment**: Flags responses that drift from expected subject matter
+- **Confidence Analysis**: Identifies overconfident or hedging language patterns
 
 ### Security Monitoring
 - **Prompt Injection Detection**: Identifies manipulation attempts and jailbreak patterns
@@ -35,29 +35,103 @@ Sovereign AI offers guardrails for AI systems operating in regulated industries 
 
 ## Architecture
 
-### 3-Tier Detection System
+### Signal-Rule-Enforcement Pipeline
 
-Intelligent routing architecture balancing speed and depth of analysis:
+Sovereign AI uses a modular detection architecture with three distinct stages:
 
-**Tier 1: Pattern Matching** (sub-millisecond)
-- Deterministic regex-based detection
-- Known attack signatures and policy violations
-- Processes approximately 80% of requests
-- Minimal latency overhead
+#### Stage 1: Signal Extraction (Parallel Analysis)
 
-**Tier 2: Semantic Analysis** (1-2 seconds)
-- Embedding-based similarity detection using transformer models
-- Context-aware risk identification
-- Semantic drift and domain mismatch detection
-- Handles approximately 15% of requests
+Multiple signal detectors analyze the LLM response simultaneously:
 
-**Tier 3: LLM Agent Analysis** (3-5 seconds)
-- Advanced reasoning via LangGraph orchestration
-- Complex edge cases requiring contextual understanding
-- Used for approximately 5% of highest-risk scenarios
-- Configurable provider selection (Groq, Ollama, self-hosted)
+**Domain Signals**
+- `DomainMismatchSignal`: Detects semantic drift from expected domain
+- `FabricatedConceptSignal`: Identifies potentially invented terms and concepts
 
-**Typical Performance**: Average ~500ms response time with intelligent escalation.
+**Grounding Signals**
+- `MissingGroundingSignal`: Flags unsubstantiated claims requiring citations
+- Uses embedding-based similarity to detect unsupported assertions
+
+**Confidence Signals**
+- `OverconfidenceSignal`: Detects absolute language without proper support
+- Pattern matching for hedging and certainty indicators
+
+**Pattern-Based Signals**
+- Regex-based detection for known attack patterns
+- Security vulnerability scanning (SQL injection, XSS, path traversal)
+
+#### Stage 2: Rule Evaluation
+
+Extracted signals are evaluated through a rules engine:
+
+**Semantic Rules** (`rules/semantic_rules.py`)
+- `HighRiskSemanticHallucinationRule`: Combines multiple signals for hallucination detection
+- `FabricatedConceptRule`: Evaluates concept fabrication severity
+
+**LLM-Based Rules** (`rules/llm_rules.py`)
+- `HighConfidenceDomainMismatchRule`: Deep analysis for domain alignment
+- Invoked for complex edge cases requiring contextual understanding
+
+**Rule Execution**
+- Rules are evaluated in severity order (critical → high → medium)
+- Each rule generates a `Verdict` with severity and failure classification
+- Multiple verdicts can be produced from a single analysis
+
+#### Stage 3: Enforcement
+
+**Verdict Adaptation** (`enforcement/verdict_adapter.py`)
+- Converts rule verdicts into enforcement actions
+- Severity mapping: CRITICAL/HIGH → BLOCK, MEDIUM/LOW → WARN/LOG
+
+**Action Enforcement** (`enforcement/actions.py`)
+- `BLOCK`: Prevents delivery of high-risk responses
+- `ALLOW`: Permits response with optional logging
+- `WARN`: Flags concern but allows delivery
+
+**Control Tower** (`enforcement/control_tower_v3.py`)
+- Orchestrates the entire detection pipeline
+- Manages tier-based routing and performance optimization
+- Tracks metrics and health statistics
+
+### System Components
+
+**Core Modules**
+- `core/interceptor.py`: LLM request/response interception
+- `core/context.py`: Request context management
+- `core/events.py`: Event handling and dispatching
+- `core/logger.py`: Structured logging
+- `core/metrics.py`: Performance and detection metrics
+
+**Signal System**
+- `signals/runner.py`: Executes all registered signals in parallel
+- `signals/registry.py`: Central signal registration
+- `signals/base.py`: Base signal interface
+- `signals/domain/`: Domain-specific signal detectors
+- `signals/grounding/`: Citation and grounding signals
+- `signals/confidence/`: Confidence analysis signals
+- `signals/embeddings/`: Embedding-based semantic analysis
+- `signals/regex/`: Pattern-based detection
+
+**Rule Engine**
+- `rules/engine.py`: Rule evaluation orchestration
+- `rules/base.py`: Base rule interface
+- `rules/semantic_rules.py`: Embedding-based rules
+- `rules/llm_rules.py`: LLM-powered deep analysis rules
+- `rules/verdicts.py`: Verdict data structures
+- `rules/verdict_reducer.py`: Multi-verdict consolidation
+
+**Enforcement Layer**
+- `enforcement/enforcer.py`: Action execution
+- `enforcement/tier_router.py`: Intelligent tier routing
+- `enforcement/verdict_adapter.py`: Verdict-to-action mapping
+- `enforcement/control_tower_v3.py`: Pipeline orchestration
+- `enforcement/fallbacks/`: Graceful degradation strategies
+
+**API Layer**
+- `api/main.py`: FastAPI application
+- `api/models.py`: Request/response schemas
+- `api/routes/`: API endpoint definitions
+- `api/middleware/`: Request processing middleware
+- `api/auth/`: Authentication and authorization
 
 ## Installation
 
@@ -67,7 +141,7 @@ Intelligent routing architecture balancing speed and depth of analysis:
 - Python 3.10+
 - 4GB RAM
 - 2 CPU cores
-- PostgreSQL 13+
+- PostgreSQL 13+ (optional, for persistence)
 
 **Recommended:**
 - 8GB RAM
@@ -89,54 +163,21 @@ pip install -r requirements.txt
 cp .env.example .env
 # Edit .env with your configuration
 
-# Initialize database
-alembic upgrade head
-
 # Start application
-python -m api.app
+uvicorn api.main:app --host 0.0.0.0 --port 8000
+
+# Or use the Python module
+python -m uvicorn api.main:app --reload
 ```
 
-API available at `http://localhost:8000` with OpenAPI documentation at `/api/docs`
+API available at `http://localhost:8000` with OpenAPI documentation at `/docs`
 
 ## Configuration
-
-### Policy Definition
-
-Define domain-specific policies in `config/policy.yaml`:
-
-```yaml
-version: "1.0.0"
-
-global:
-  default_action: "log"
-  strict_mode: true  # Treat MEDIUM severity as BLOCK
-
-failure_policies:
-  fabricated_fact:
-    severity: "critical"
-    action: "block"
-    reason: "Unverified factual claims pose liability risk"
-    
-  missing_grounding:
-    severity: "high"
-    action: "warn"
-    reason: "Claims require source attribution"
-    
-  prompt_injection:
-    severity: "critical"
-    action: "block"
-    reason: "Security threat - potential system compromise"
-
-thresholds:
-  critical: 0.75  # 75% confidence threshold for blocking
-  high: 0.65
-  medium: 0.55
-```
 
 ### Environment Configuration
 
 ```bash
-# LLM Provider (choose one or both)
+# LLM Provider (for LLM-based rules)
 GROQ_API_KEY=your_key_here                    # Recommended - free tier available
 OLLAMA_BASE_URL=http://localhost:11434        # Air-gapped deployments
 
@@ -145,7 +186,7 @@ JWT_SECRET_KEY=your_secure_key
 JWT_ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=30
 
-# Database
+# Database (optional)
 DATABASE_URL=postgresql://user:pass@host:5432/llm_obs
 
 # Performance
@@ -159,33 +200,50 @@ BLOCK_THRESHOLD=0.75
 ALLOW_THRESHOLD=0.25
 ```
 
+### Policy Definition
+
+Configure enforcement policies by adjusting severity thresholds and action mappings in `enforcement/verdict_adapter.py`:
+
+```python
+# Example: Customize severity-to-action mapping
+class VerdictAdapter:
+    @staticmethod
+    def resolve_action(verdict):
+        if verdict.severity in ["CRITICAL", "HIGH"]:
+            return EnforcementAction.BLOCK
+        elif verdict.severity == "MEDIUM":
+            return EnforcementAction.WARN
+        return EnforcementAction.ALLOW
+```
+
 ## API Reference
 
-### Authentication
-
-Detection endpoints require JWT authentication:
+### Health Check
 
 ```bash
-# Register user
-curl -X POST http://localhost:8000/api/auth/register \
-  -H "Content-Type: application/json" \
-  -d '{"username": "user", "password": "secure_pass", "email": "user@example.com"}'
+curl http://localhost:8000/health
+```
 
-# Obtain token
-curl -X POST http://localhost:8000/api/auth/login \
-  -d "username=user&password=secure_pass"
-
-# Response: {"access_token": "eyJ...", "token_type": "bearer"}
+**Response:**
+```json
+{
+  "status": "healthy",
+  "tier_distribution": {
+    "tier1": 85.2,
+    "tier2": 12.8,
+    "tier3": 2.0
+  },
+  "health_message": "All systems operational"
+}
 ```
 
 ### Detection Endpoint
 
 ```bash
-curl -X POST http://localhost:8000/api/detect \
-  -H "Authorization: Bearer YOUR_TOKEN" \
+curl -X POST http://localhost:8000/detect \
   -H "Content-Type: application/json" \
   -d '{
-    "text": "LLM generated output to validate",
+    "llm_response": "LLM generated output to validate",
     "context": {
       "domain": "healthcare",
       "user_id": "patient_123"
@@ -198,15 +256,48 @@ curl -X POST http://localhost:8000/api/detect \
 {
   "action": "block",
   "tier_used": 2,
-  "method": "semantic_similarity",
+  "method": "semantic_analysis",
   "confidence": 0.89,
-  "processing_time_ms": 1247.3,
-  "should_block": true,
-  "reason": "Potential fabricated medical claim - requires verification",
-  "rate_limit": {
-    "limit": 1000,
-    "remaining": 847,
-    "reset_at": "2026-02-11T05:00:00Z"
+  "processing_time_ms": 247.3,
+  "failure_class": "hallucination",
+  "severity": "high",
+  "explanation": "Potential fabricated medical claim detected - requires verification",
+  "blocked": true
+}
+```
+
+### Batch Detection
+
+```bash
+curl -X POST http://localhost:8000/detect/batch \
+  -H "Content-Type: application/json" \
+  -d '[
+    {"llm_response": "Response 1", "context": {}},
+    {"llm_response": "Response 2", "context": {}}
+  ]'
+```
+
+### Metrics
+
+```bash
+curl http://localhost:8000/metrics/stats
+```
+
+**Response:**
+```json
+{
+  "total_detections": 15420,
+  "tier1_count": 13140,
+  "tier2_count": 1974,
+  "tier3_count": 306,
+  "distribution": {
+    "tier1": 85.2,
+    "tier2": 12.8,
+    "tier3": 2.0
+  },
+  "health": {
+    "is_healthy": true,
+    "message": "All systems operational"
   }
 }
 ```
@@ -223,7 +314,7 @@ docker-compose up -d
 
 Includes:
 - API server with health checks
-- PostgreSQL with persistent volumes
+- PostgreSQL with persistent volumes (optional)
 - Prometheus metrics collection
 - Grafana dashboards (port 3000)
 - Automated backups
@@ -244,30 +335,8 @@ Features:
 - Horizontal pod autoscaling (2-10 replicas)
 - Rolling updates with minimal downtime
 - Resource limits and requests defined
-- Persistent volume claims for database
+- ConfigMap-based configuration
 - Ingress configuration included
-- ConfigMap-based policy updates
-
-### High Availability Setup
-
-```yaml
-# k8s/deployment.yaml
-spec:
-  replicas: 3
-  strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0
-  
-  resources:
-    requests:
-      memory: "2Gi"
-      cpu: "1000m"
-    limits:
-      memory: "4Gi"
-      cpu: "2000m"
-```
 
 ## Monitoring & Observability
 
@@ -275,20 +344,11 @@ spec:
 
 Exposed at `/metrics` endpoint:
 
-- `llm_obs_detections_total` - Total detections by action and tier
+- `llm_obs_detections_total` - Total detections by action and method
 - `llm_obs_processing_time_seconds` - Response time histogram
-- `llm_obs_cache_hit_rate` - Cache effectiveness
+- `llm_obs_signal_execution_time` - Per-signal performance
+- `llm_obs_rule_evaluation_time` - Rule evaluation latency
 - `llm_obs_failures_total` - Detection failures by type
-
-### Grafana Dashboards
-
-Pre-configured dashboards included in `monitoring/grafana/`:
-
-- Real-time detection statistics
-- Performance metrics (p50, p95, p99)
-- Error rates and timeout tracking
-- Policy violation trends
-- Cost analysis per detection tier
 
 ### Admin Dashboard
 
@@ -300,8 +360,8 @@ streamlit run dashboard/admin_dashboard.py --server.port 8501
 
 Capabilities:
 - Live detection monitoring
-- Policy configuration updates
-- User management and permissions
+- Signal performance analysis
+- Rule effectiveness tracking
 - Historical analytics and reporting
 - System health and diagnostics
 
@@ -310,15 +370,16 @@ Capabilities:
 **This is an observability system first, enforcement tool second:**
 
 ### Observability Features
-- **Detection & Logging**: All outputs are analyzed and logged
-- **Risk Scoring**: Confidence scores and reasoning provided
+- **Signal Extraction**: All signals are extracted and logged
+- **Rule Evaluation**: Complete evaluation history
+- **Verdict Tracking**: All verdicts recorded with reasoning
 - **Metrics & Analytics**: Track patterns, trends, and model behavior
 - **Audit Trail**: Complete history for compliance review
 
 ### Enforcement Options (Configurable)
 - **Block**: Prevent high-risk outputs from delivery (optional)
 - **Warn**: Flag concerns but allow delivery with context
-- **Log**: Record for review without user-facing impact
+- **Allow**: Permit with logging for later review
 
 The system can operate in pure observability mode (log-only) or with active enforcement based on your risk tolerance and deployment needs.
 
@@ -331,22 +392,16 @@ The system can operate in pure observability mode (log-only) or with active enfo
 - Character encoding validation
 
 ### Attack Prevention
-- Configurable rate limiting per user (default: 1000 requests/hour)
+- Pattern-based attack detection (SQL injection, XSS, path traversal)
 - Request timeout: 15 seconds with resource cleanup
-- SQL/XSS/Path traversal pattern detection
+- Rate limiting via middleware (configurable)
 - Pathological input early rejection
 
 ### Data Protection
 - JWT tokens with configurable expiration
-- Bcrypt password hashing
+- Bcrypt password hashing (if auth enabled)
 - Parameterized queries via ORM
 - Comprehensive audit logging
-
-### Compliance Support
-- Audit trail stored in PostgreSQL
-- Configurable data retention policies
-- GDPR-aligned data handling
-- Documentation aligned with SOC 2 controls
 
 ## Testing
 
@@ -361,8 +416,9 @@ pytest --cov=. --cov-report=html --cov-report=term
 
 # Specific test categories
 pytest tests/test_api.py              # API endpoints
-pytest tests/test_tier_router.py      # Detection routing
-pytest tests/test_performance.py      # Performance benchmarks
+pytest tests/test_signals.py          # Signal extraction
+pytest tests/test_rules.py            # Rule evaluation
+pytest tests/test_enforcement.py      # Enforcement logic
 ```
 
 ### Performance Benchmarks
@@ -372,48 +428,100 @@ pytest tests/test_performance.py      # Performance benchmarks
 python scripts/testing/load_test.py --requests 1000 --concurrent 50
 
 # Typical results (4 CPU cores):
-# - Throughput: ~1000 req/min
-# - P95 latency: ~800ms
-# - P99 latency: ~2000ms
+# - Throughput: ~800-1000 req/min
+# - P95 latency: ~500ms
+# - P99 latency: ~1200ms
 ```
 
 ## Use Cases
 
 ### Healthcare AI Assistant
 ```python
-# Flag potentially risky medical information
-response = await control_tower.evaluate_response(
+from enforcement.control_tower_v3 import ControlTowerV3
+
+tower = ControlTowerV3()
+result = tower.evaluate_response(
     llm_response="Aspirin cures cancer with 100% success rate",
     context={"domain": "healthcare", "high_risk": True}
 )
-# Result: BLOCKED - High confidence dangerous medical misinformation
+# Result: action=BLOCK, severity=CRITICAL, failure_class=hallucination
 ```
 
 ### Financial Services
 ```python
-# Detect unauthorized financial predictions
-response = await control_tower.evaluate_response(
+result = tower.evaluate_response(
     llm_response="This stock will definitely increase 500% next week",
     context={"domain": "finance", "regulated": True}
 )
-# Result: BLOCKED - Unauthorized definitive financial prediction
+# Result: action=BLOCK, severity=HIGH, failure_class=overconfidence
 ```
 
 ### Legal Document Generation
 ```python
-# Verify legal citations
-response = await control_tower.evaluate_response(
+result = tower.evaluate_response(
     llm_response="According to Brown v. Board of Education (1856)...",
     context={"domain": "legal", "requires_citations": True}
 )
-# Result: BLOCKED - Incorrect case date (actual: 1954)
+# Result: action=BLOCK, severity=HIGH, failure_class=fabrication
+```
+
+## Extending the System
+
+### Adding Custom Signals
+
+```python
+# signals/custom/my_signal.py
+from signals.base import BaseSignal
+
+class MyCustomSignal(BaseSignal):
+    def extract(self, prompt: str, response: str, metadata: dict) -> dict:
+        # Your detection logic
+        return {
+            "signal": "my_custom_signal",
+            "detected": True,
+            "confidence": 0.85,
+            "metadata": {"reason": "Custom detection triggered"}
+        }
+
+# Register in signals/registry.py
+from .custom.my_signal import MyCustomSignal
+ALL_SIGNALS.append(MyCustomSignal())
+```
+
+### Adding Custom Rules
+
+```python
+# rules/custom_rules.py
+from rules.base import BaseRule
+from rules.verdicts import Verdict
+
+class MyCustomRule(BaseRule):
+    def evaluate(self, signals: dict) -> Verdict | None:
+        if signals.get("my_custom_signal", {}).get("detected"):
+            return Verdict(
+                severity="HIGH",
+                failure_class="custom_failure",
+                explanation="Custom rule triggered",
+                confidence=0.85
+            )
+        return None
+
+# Register in rules/engine.py
+from rules.custom_rules import MyCustomRule
+ALL_RULES.append(MyCustomRule())
 ```
 
 ## Performance Optimization
 
+### Signal Execution
+- Signals run in parallel for optimal performance
+- Lightweight signals (regex) execute first
+- Heavy signals (embeddings, LLM) are cached
+- Failed signals don't block pipeline execution
+
 ### Caching Strategy
-- Semantic embeddings cached for 1 hour
-- LLM agent decisions cached for similar inputs
+- Embedding vectors cached for 1 hour
+- LLM-based rule results cached for similar inputs
 - Redis integration available for distributed deployments
 
 ### Scaling Recommendations
@@ -421,24 +529,18 @@ response = await control_tower.evaluate_response(
 - **1-10K req/min**: 3-5 instances with load balancer
 - **>10K req/min**: Kubernetes auto-scaling (10+ pods)
 
-### Cost Considerations
-- Tier 1 (Pattern): Negligible compute cost
-- Tier 2 (Embeddings): Local compute only
-- Tier 3 (LLM): Free tier available with Groq (14,400 requests/day)
-- Hosting costs depend on infrastructure choices
-
 ## Roadmap
 
-- **Q2 2026**: FHIR integration for healthcare workflows
+- **Q2 2026**: Enhanced signal library (toxicity, bias detection)
 - **Q3 2026**: Multi-language support (Spanish, French, German)
-- **Q4 2026**: Domain-specific detection model training
-- **2027**: Enhanced compliance reporting features
+- **Q4 2026**: AutoML for custom signal/rule training
+- **2027**: Real-time feedback loop for model improvement
 
 ## Support
 
 - **Documentation**: Additional guides available in `/docs`
 - **Community**: GitHub Issues for questions and bug reports
-- **Contributing**: Pull requests welcome - see contributing guidelines
+- **Contributing**: Pull requests welcome - see CONTRIBUTING.md
 
 ## License
 
@@ -454,11 +556,11 @@ Development informed by:
 
 ## Important Disclaimers
 
-**Detection Accuracy**: This system uses pattern matching, semantic analysis, and LLM-based reasoning to detect potential risks. Detection accuracy varies by content type and configuration. False positives and false negatives will occur.
+**Detection Accuracy**: This system uses signal extraction, rule-based evaluation, and pattern matching to detect potential risks. Detection accuracy varies by content type and configuration. False positives and false negatives will occur.
 
 **Not a Replacement for Human Review**: This tool is designed to augment, not replace, human oversight. Organizations must implement appropriate review processes for high-stakes decisions.
 
-**Configuration Required**: Out-of-box detection policies are starting points. Tune thresholds and policies based on your specific use case, risk tolerance, and testing.
+**Configuration Required**: Out-of-box detection policies are starting points. Tune signals, rules, and thresholds based on your specific use case, risk tolerance, and testing.
 
 **Deployment Responsibility**: While the system includes security controls and follows best practices, deploying organizations are responsible for:
 - Proper environment configuration and hardening
