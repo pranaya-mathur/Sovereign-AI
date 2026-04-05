@@ -123,23 +123,46 @@ class SemanticDetector:
         Args:
             model_name: HuggingFace model name (default: all-MiniLM-L6-v2, 80MB)
         """
-        logger.info(f"Loading semantic detector with model: {model_name}")
+        from config.policy_loader import PolicyLoader
+        import torch
         
-        # CRITICAL FIX: Use local_files_only=True to prevent network calls
-        # This loads from ~/.cache/huggingface/ without checking for updates
-        # Model will be downloaded on first use, then cached forever
+        # Load hardware policy
+        policy = PolicyLoader("config/policy.yaml")
+        hw_config = policy.get_hardware_config()
+        
+        # Determine optimal device
+        device = hw_config.get("accelerator", "auto")
+        if device == "auto" or device is None:
+            if torch.cuda.is_available():
+                device = "cuda"
+            elif torch.backends.mps.is_available():
+                device = "mps"
+            else:
+                device = "cpu"
+                
+        logger.info(f"Loading semantic detector with model: {model_name} on device: {device}")
+        
+        # Check for fine-tuned enterprise model first
+        custom_model_path = f"models/custom_embeddings/{model_name}"
+        if os.path.exists(custom_model_path):
+            logger.info(f"🚀 Found custom fine-tuned model at {custom_model_path}. Loading...")
+            target_model = custom_model_path
+        else:
+            target_model = model_name
+            
         try:
-            # Try loading from cache first (fast path)
+            # Try loading from cache or custom path first (fast path)
             self.model = SentenceTransformer(
-                model_name,
+                target_model,
+                device=device,
                 local_files_only=True,  # Use cached model, no network calls
             )
-            logger.info(f"Loaded {model_name} from local cache (no network calls)")
+            logger.info(f"Loaded {target_model} from local cache using {device}")
         except Exception as e:
             # First-time download (or cache corrupted)
-            logger.info(f"Downloading {model_name} for first-time use (will be cached)...")
-            self.model = SentenceTransformer(model_name)  # This will download
-            logger.info(f"Model downloaded and cached at {os.path.expanduser('~/.cache/huggingface')}")
+            logger.info(f"Downloading {target_model} for first-time use on {device} (will be cached)...")
+            self.model = SentenceTransformer(target_model, device=device)  # This will download
+            logger.info(f"Model downloaded and cached using {device}")
         
         self.model.eval()  # Set to evaluation mode for deterministic inference
         

@@ -167,6 +167,14 @@ class PolicyLoader:
             "ollama_base_url": providers.get("ollama_base_url", "http://localhost:11434"),
         }
     
+    def get_hardware_config(self) -> Dict[str, Any]:
+        """Get hardware acceleration configuration."""
+        hw = self._policy.get("hardware", {})
+        return {
+            "accelerator": hw.get("accelerator", "auto"),
+            "precision": hw.get("precision", "fp16")
+        }
+    
     def should_enforce(
         self, 
         failure_class: str, 
