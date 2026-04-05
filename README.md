@@ -62,6 +62,8 @@ API docs: `http://localhost:8000/docs`
 - ⚙️ **Hot-Swappable Configs** - Policy-driven thresholds and logic management in `policy.yaml`.
 - 🧠 **Dynamic LLMs** - Plug-and-play LLM providers for Tier 3, defaulting to `qwen3.5:9b` (Ollama) and `llama-3.3-70b` (Groq).
 - 🚀 **CI/CD Pipeline** - Built-in GCP `cloudbuild.yaml` for automated testing, artifact building, and zero-downtime GKE deployment.
+- 🏎️ **Dynamic Hardware Binding** - Explicitly targets `cuda` or Apple Silicon `mps` ensuring minimum latency.
+- 🎯 **Domain Fine-Tuning** - Standalone training script to align embeddings with esoteric enterprise terminologies.
 
 ## Python Usage
 
@@ -210,7 +212,7 @@ streamlit run dashboard/admin_dashboard.py
 
 ## Roadmap
 
-- **Q2 2026**: GPU acceleration, domain fine-tuning
+- ~~**Q2 2026**: GPU acceleration, domain fine-tuning~~ ✅ (Completed)
 - **Q3 2026**: Multi-language, feedback loops
 - **Q4 2026**: Fact-checking, AutoML patterns
 
