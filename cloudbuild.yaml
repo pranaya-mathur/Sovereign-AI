@@ -1,0 +1,44 @@
+steps:
+# 1. Run Unit & Integration Tests
+# We prevent deploying broken code by running the full 74-test suite first.
+- name: 'python:3.11-slim'
+  entrypoint: 'bash'
+  args:
+  - '-c'
+  - |
+    pip install -r requirements.txt
+    pytest tests/ -v
+
+# 2. Build the Docker Image
+# Builds the robust, multi-stage production container.
+- name: 'gcr.io/cloud-builders/docker'
+  args: [
+    'build', 
+    '-t', 'us-central1-docker.pkg.dev/$PROJECT_ID/sovereign-artifacts/llm-observability-api:$COMMIT_SHA', 
+    '-t', 'us-central1-docker.pkg.dev/$PROJECT_ID/sovereign-artifacts/llm-observability-api:latest',
+    '.'
+  ]
+
+# 3. Push to Google Artifact Registry
+- name: 'gcr.io/cloud-builders/docker'
+  args: ['push', 'us-central1-docker.pkg.dev/$PROJECT_ID/sovereign-artifacts/llm-observability-api', '--all-tags']
+
+# 4. Deploy to GKE (Kubernetes)
+# Automatically updates your cluster with the newly pushed image.
+- name: 'gcr.io/cloud-builders/kubectl'
+  args:
+  - 'set'
+  - 'image'
+  - 'deployment/llm-observability-api'
+  - 'api=us-central1-docker.pkg.dev/$PROJECT_ID/sovereign-artifacts/llm-observability-api:$COMMIT_SHA'
+  env:
+  - 'CLOUDSDK_COMPUTE_ZONE=us-central1'
+  - 'CLOUDSDK_CONTAINER_CLUSTER=sovereign-ai-cluster'
+
+images:
+- 'us-central1-docker.pkg.dev/$PROJECT_ID/sovereign-artifacts/llm-observability-api:$COMMIT_SHA'
+- 'us-central1-docker.pkg.dev/$PROJECT_ID/sovereign-artifacts/llm-observability-api:latest'
+
+options:
+  machineType: 'E2_HIGHCPU_8'
+  logging: CLOUD_LOGGING_ONLY

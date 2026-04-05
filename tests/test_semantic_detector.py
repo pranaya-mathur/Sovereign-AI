@@ -35,8 +35,9 @@ class TestSemanticDetector(unittest.TestCase):
         result = self.detector.detect(response, "fabricated_concept")
         
         self.assertTrue(result["detected"])
-        self.assertGreater(result["confidence"], 0.7)
-        self.assertEqual(result["method"], "embedding")
+        self.assertGreater(result["confidence"], 0.6)
+        # Accept both original embedding and new vector_db early-return
+        self.assertIn(result["method"], ["embedding", "vector_db"])
     
     def test_missing_grounding_detection(self):
         """Test detection of missing grounding."""

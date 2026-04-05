@@ -198,17 +198,37 @@ failure_policies:
       - "Missing code block formatting"
       - "Improper table syntax"
 
-# ⚠️ IMPORTANT: Tier 3 LLM-based Detection Thresholds
-# These thresholds are for Tier 3 (LLM Agent) only!
-# Vector DB (Tier 2) uses separate hardcoded thresholds in code (typically 0.55)
+# ⚠️ IMPORTANT: Detection Thresholds
+# These thresholds define the cutoff points for each tier
 thresholds:
   critical: 0.15  # 70% confidence required for BLOCK (Tier 3)
   high: 0.10      # 60% confidence for WARN (Tier 3)
   medium: 0.08    # 50% confidence for WARN (Tier 3)
   low: 0.05       # 40% confidence for LOG (Tier 3)
+  
+  # Global Cutoffs
+  tier1_cutoff: 0.80      # Above this, Tier 1 is final
+  tier2_cutoff: 0.15      # Above this, Tier 2 is used
+  uncertain_default: 0.95 # NEW: Default confidence for NO pattern match (Clean)
+  # This ensures clean requests stay in Tier 1 (RESTORES 95/4/1 TARGET)
 
 # Enforcement Messages
 messages:
   block: "⛔ Response blocked: {reason}"
   warn: "⚠️ Warning: {reason}"
   log: "ℹ️ Note: {reason}"
+
+# 🛰️ Enterprise Observability (OpenTelemetry)
+observability:
+  enabled: false  # Set to true to enable OTel tracing & metrics
+  service_name: "sovereign-ai-guard"
+  otlp_endpoint: "http://localhost:4317"
+  sampling_rate: 1.0  # 1.0 = 100% of requests traced
+  export_timeout_seconds: 10
+
+# 🤖 LLM Provider Configuration
+llm_providers:
+  groq_model: "llama-3.3-70b-versatile"
+  ollama_model: "qwen3.5:9b"
+  ollama_base_url: "http://localhost:11434"
+

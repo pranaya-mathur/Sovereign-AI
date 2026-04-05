@@ -1,12 +1,9 @@
-"""Tier distribution tracking and performance metrics.
-
-Tracks distribution of requests across detection tiers.
-"""
-
-from typing import Dict, Any
-from collections import defaultdict
-from dataclasses import dataclass, field
 import time
+from typing import Dict, Any, Optional
+from dataclasses import dataclass, field
+from collections import defaultdict
+from opentelemetry import metrics
+from core.otel import SovereignOTel
 
 try:
     from enforcement.control_tower_v2 import DetectionTier
@@ -56,12 +53,32 @@ class TierMetrics:
     """Track metrics across all detection tiers."""
 
     def __init__(self):
-        """Initialize metrics tracking."""
+        """Initialize metrics tracking with OTel support."""
+        from collections import defaultdict
         self.stats: Dict[DetectionTier, TierStats] = defaultdict(TierStats)
         self.start_time = time.time()
+        
+        # OTel Metrics initialization
+        self.otel_singleton = SovereignOTel()
+        self.meter = self.otel_singleton.get_meter("sovereign-metrics")
+        
+        self.request_counter = self.meter.create_counter(
+            "sovereign.requests.total",
+            description="Total detection requests"
+        )
+        self.latency_histogram = self.meter.create_histogram(
+            "sovereign.latency.ms",
+            unit="ms",
+            description="Detection latency per tier"
+        )
+        self.threat_counter = self.meter.create_counter(
+            "sovereign.threats.total",
+            description="Total threats detected per tier"
+        )
 
     def record_detection(
-        self, tier: DetectionTier, latency_ms: float, is_threat: bool = False
+        self, tier: DetectionTier, latency_ms: float, is_threat: bool = False,
+        failure_class: Optional[str] = None
     ) -> None:
         """Record a detection event.
 
@@ -69,8 +86,19 @@ class TierMetrics:
             tier: Detection tier used
             latency_ms: Detection latency in milliseconds
             is_threat: Whether a threat was detected
+            failure_class: Category of the threat detected
         """
         self.stats[tier].record(latency_ms, is_threat)
+        
+        # Record OTel Metrics
+        labels = {"tier": tier.name}
+        if failure_class:
+            labels["failure_class"] = failure_class
+            
+        self.request_counter.add(1, labels)
+        self.latency_histogram.record(latency_ms, labels)
+        if is_threat:
+            self.threat_counter.add(1, labels)
 
     def get_summary(self) -> Dict[str, Any]:
         """Get summary of all tier metrics."""

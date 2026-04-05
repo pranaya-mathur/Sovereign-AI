@@ -8,17 +8,22 @@ Combines all detection methods:
 
 from typing import Dict, Any, Optional
 from dataclasses import dataclass
+import logging
 import time
 import re
-import signal
 from collections import Counter
 
+from core.utils import run_with_timeout, TimeoutException
+from core.otel import otel_manager
 from config.policy_loader import PolicyLoader
 from contracts.severity_levels import SeverityLevel, EnforcementAction
 from contracts.failure_classes import FailureClass
+from core.metrics import TierMetrics, DetectionTier
 from enforcement.tier_router import TierRouter, TierDecision
 from signals.embeddings.semantic_detector import SemanticDetector
 from signals.regex.pattern_library import PatternLibrary
+
+logger = logging.getLogger(__name__)
 
 @dataclass
 class DetectionResult:
@@ -32,13 +37,7 @@ class DetectionResult:
     severity: Optional[SeverityLevel] = None
     explanation: str = ""
 
-class TimeoutException(Exception):
-    """Exception raised when regex takes too long."""
-    pass
-
-def timeout_handler(signum, frame):
-    """Signal handler for regex timeout."""
-    raise TimeoutException("Regex timeout")
+# Removed Unix-only TimeoutException and timeout_handler
 
 def is_pathological_input_early(text: str) -> tuple[bool, str, float]:
     """Early detection of pathological patterns before expensive processing.
@@ -105,6 +104,7 @@ class ControlTowerV3:
         """
         self.policy = PolicyLoader(policy_path)
         self.tier_router = TierRouter()
+        self.metrics = TierMetrics()
         
         # Load Tier 1 patterns
         self.patterns = PatternLibrary.get_all_patterns()
@@ -122,6 +122,11 @@ class ControlTowerV3:
         
         # Initialize Tier 3 (LLM agents) - only if enabled
         self.llm_agent = None
+        # Initialize OpenTelemetry
+        obs_config = self.policy.get_observability_config()
+        otel_manager.initialize(obs_config)
+        self.tracer = otel_manager.get_tracer("sovereign-control-tower")
+
         if enable_tier3:
             try:
                 from agent.langgraph_agent import PromptInjectionAgent
@@ -137,7 +142,7 @@ class ControlTowerV3:
             print("ℹ️ Tier 3 LLM agent disabled (set enable_tier3=True in dependencies.py to enable)")
     
     def _safe_regex_search(self, pattern: re.Pattern, text: str, timeout_seconds: float = 0.5) -> Optional[re.Match]:
-        """Safely search with regex with timeout protection.
+        """Safely search with regex with cross-platform timeout protection.
         
         Args:
             pattern: Compiled regex pattern
@@ -148,17 +153,12 @@ class ControlTowerV3:
             Match object or None if no match/timeout
         """
         try:
-            # Set alarm for timeout (Unix only)
-            if hasattr(signal, 'SIGALRM'):
-                signal.signal(signal.SIGALRM, timeout_handler)
-                signal.setitimer(signal.ITIMER_REAL, timeout_seconds)
-            
-            match = pattern.search(text)
-            
-            # Cancel alarm
-            if hasattr(signal, 'SIGALRM'):
-                signal.setitimer(signal.ITIMER_REAL, 0)
-            
+            # Use cross-platform threading timeout
+            match = run_with_timeout(
+                pattern.search,
+                args=(text,),
+                timeout=timeout_seconds
+            )
             return match
         except TimeoutException:
             return None
@@ -251,13 +251,14 @@ class ControlTowerV3:
         if best_match:
             return best_match
         
-        # No strong patterns matched - gray zone
+        # No strong patterns matched - Tier 1 considers it "clean" enough
+        # Using configured uncertain_default (e.g. 0.95) to stay in Tier 1
         return {
-            "confidence": 0.5,
+            "confidence": self.policy.get_uncertain_default(),
             "failure_class": None,
             "method": "regex_uncertain",
-            "should_allow": None,
-            "explanation": "No strong patterns detected - needs semantic analysis"
+            "should_allow": True,
+            "explanation": "No strong patterns detected - considered safe by Tier 1"
         }
 
     def _tier2_detect(self, text: str, tier1_result: Dict[str, Any]) -> Dict[str, Any]:
@@ -453,7 +454,7 @@ class ControlTowerV3:
         context: Dict[str, Any] = None
     ) -> DetectionResult:
         """
-        Evaluate LLM response using 3-tier detection.
+        Evaluate LLM response using 3-tier detection with OTel tracing.
         
         Args:
             llm_response: The LLM response text to analyze
@@ -462,100 +463,174 @@ class ControlTowerV3:
         Returns:
             DetectionResult with enforcement decision
         """
-        start_time = time.time()
-        context = context or {}
-        
-        try:
-            # Tier 1: Fast regex detection
-            tier1_result = self._tier1_detect(llm_response)
+        with self.tracer.start_as_current_span("evaluate_response") as span:
+            span.set_attribute("response.length", len(llm_response))
+            start_time = time.time()
+            context = context or {}
             
-            # CRITICAL: If pathological input detected, return immediately
-            if tier1_result.get("method") == "regex_pathological":
+            try:
+                # Tier 1: Fast regex detection
+                tier1_start = time.time()
+                with self.tracer.start_as_current_span("tier1_detect") as t1_span:
+                    tier1_result = self._tier1_detect(llm_response)
+                    t1_span.set_attribute("confidence", tier1_result.get("confidence", 0.0))
+                
+                # CRITICAL: If pathological input detected, return immediately
+                if tier1_result.get("method") == "regex_pathological":
+                    processing_time = (time.time() - start_time) * 1000
+                    f_class = FailureClass.PROMPT_INJECTION
+                    
+                    self.metrics.record_detection(
+                        DetectionTier.REGEX, 
+                        processing_time, 
+                        is_threat=True,
+                        failure_class=f_class.value
+                    )
+                    span.set_attribute("detection.tier", "REGEX (Pathological)")
+                    span.set_attribute("detection.failure_class", f_class.value)
+                    
+                    return DetectionResult(
+                        action=EnforcementAction.BLOCK,
+                        tier_used=1,
+                        method="regex_pathological",
+                        confidence=tier1_result.get("confidence", 0.95),
+                        processing_time_ms=processing_time,
+                        failure_class=f_class,
+                        severity=SeverityLevel.CRITICAL,
+                        explanation=tier1_result.get("explanation", "Pathological input blocked")
+                    )
+                
+                # Route to appropriate tier using policy-defined cutoffs
+                tier_decision = self.tier_router.route(
+                    tier1_result,
+                    tier1_cutoff=self.policy.get_tier1_cutoff(),
+                    tier2_cutoff=self.policy.get_tier2_cutoff()
+                )
+                span.set_attribute("tier_routing.decision", tier_decision.tier)
+                
+                # Execute appropriate tier
+                if tier_decision.tier == 1:
+                    latency_ms = (time.time() - tier1_start) * 1000
+                    is_threat = tier1_result.get("should_allow") is False
+                    f_class = tier1_result.get("failure_class")
+                    
+                    self.metrics.record_detection(
+                        DetectionTier.REGEX, 
+                        latency_ms, 
+                        is_threat=is_threat,
+                        failure_class=f_class.value if f_class else None
+                    )
+                    final_result = tier1_result
+                    
+                elif tier_decision.tier == 2:
+                    tier2_start = time.time()
+                    with self.tracer.start_as_current_span("tier2_detect") as t2_span:
+                        tier2_result = self._tier2_detect(llm_response, tier1_result)
+                    
+                    latency_ms = (time.time() - tier2_start) * 1000
+                    f_class = tier2_result.get("failure_class")
+                    is_threat = f_class is not None
+                    
+                    self.metrics.record_detection(
+                        DetectionTier.EMBEDDING, 
+                        latency_ms, 
+                        is_threat=is_threat,
+                        failure_class=f_class.value if f_class else None
+                    )
+                    
+                    # Escalate to Tier 3 for gray zone cases
+                    confidence = tier2_result.get("confidence", 0.0)
+                    failure_detected = tier2_result.get("failure_class") is not None
+                    
+                    should_escalate_to_tier3 = (
+                        (0.05 <= confidence < 0.15) or
+                        (failure_detected and confidence < 0.25)
+                    )
+                    
+                    if should_escalate_to_tier3 and self.tier3_available:
+                        span.set_attribute("tier_routing.escalation", "Tier 2 -> Tier 3")
+                        tier3_start = time.time()
+                        with self.tracer.start_as_current_span("tier3_detect_escalated") as t3_span:
+                            final_result = self._tier3_detect(llm_response, context)
+                        
+                        latency_ms_t3 = (time.time() - tier3_start) * 1000
+                        f_class_t3 = final_result.get("failure_class")
+                        is_threat_t3 = f_class_t3 is not None
+                        
+                        self.metrics.record_detection(
+                            DetectionTier.LLM_AGENT, 
+                            latency_ms_t3, 
+                            is_threat=is_threat_t3,
+                            failure_class=f_class_t3.value if f_class_t3 else None
+                        )
+                        tier_decision = TierDecision(tier=3, reason="Escalated from Tier 2")
+                    else:
+                        final_result = tier2_result
+                        
+                else:  # Tier 3
+                    tier3_start = time.time()
+                    with self.tracer.start_as_current_span("tier3_detect") as t3_span:
+                        final_result = self._tier3_detect(llm_response, context)
+                    
+                    latency_ms_t3 = (time.time() - tier3_start) * 1000
+                    f_class_t3 = final_result.get("failure_class")
+                    is_threat_t3 = f_class_t3 is not None
+                    
+                    self.metrics.record_detection(
+                        DetectionTier.LLM_AGENT, 
+                        latency_ms_t3, 
+                        is_threat=is_threat_t3,
+                        failure_class=f_class_t3.value if f_class_t3 else None
+                    )
+                
+                # Determine action based on final result
+                f_class_final = final_result.get("failure_class")
+                confidence = final_result.get("confidence", 0.5)
+                should_allow = final_result.get("should_allow")
+                
+                if f_class_final:
+                    policy = self.policy.get_policy(f_class_final)
+                    action = policy.action
+                    severity = policy.severity
+                else:
+                    if should_allow is False:
+                        action = EnforcementAction.WARN
+                        severity = SeverityLevel.MEDIUM
+                    else:
+                        action = EnforcementAction.ALLOW
+                        severity = None
+                
                 processing_time = (time.time() - start_time) * 1000
                 
+                # Record final results to span
+                span.set_attribute("detection.final_tier", tier_decision.tier)
+                span.set_attribute("detection.failure_class", f_class_final.value if f_class_final else "None")
+                span.set_attribute("detection.confidence", confidence)
+                span.set_attribute("detection.action", action.value)
+                
                 return DetectionResult(
-                    action=EnforcementAction.BLOCK,
-                    tier_used=1,
-                    method="regex_pathological",
-                    confidence=tier1_result.get("confidence", 0.95),
+                    action=action,
+                    tier_used=tier_decision.tier,
+                    method=final_result.get("method", "unknown"),
+                    confidence=confidence,
                     processing_time_ms=processing_time,
-                    failure_class=FailureClass.PROMPT_INJECTION,
-                    severity=SeverityLevel.CRITICAL,
-                    explanation=tier1_result.get("explanation", "Pathological input blocked")
+                    failure_class=f_class_final,
+                    severity=severity,
+                    explanation=final_result.get("explanation", "Analysis completed")
                 )
             
-            # Route to appropriate tier
-            tier_decision = self.tier_router.route(tier1_result)
-            
-            # Execute appropriate tier
-            if tier_decision.tier == 1:
-                final_result = tier1_result
-            elif tier_decision.tier == 2:
-                tier2_result = self._tier2_detect(llm_response, tier1_result)
-                
-                # Escalate to Tier 3 for gray zone cases
-                confidence = tier2_result.get("confidence", 0.0)
-                failure_detected = tier2_result.get("failure_class") is not None
-                
-                should_escalate_to_tier3 = (
-                    (0.05 <= confidence < 0.15) or
-                    (failure_detected and confidence < 0.25)
+            except Exception as e:
+                logger.error(f"Error in evaluate_response: {e}")
+                span.record_exception(e)
+                processing_time = (time.time() - start_time) * 1000
+                return DetectionResult(
+                    action=EnforcementAction.LOG,
+                    tier_used=0,
+                    method="error",
+                    confidence=0.0,
+                    processing_time_ms=processing_time,
+                    explanation=f"System error: {str(e)}"
                 )
-                
-                if should_escalate_to_tier3 and self.tier3_available:
-                    print(f"⬆️ Escalating to Tier 3: confidence={confidence:.1%}, needs deep analysis")
-                    final_result = self._tier3_detect(llm_response, context)
-                    tier_decision = TierDecision(tier=3, reason="Escalated from Tier 2")
-                else:
-                    final_result = tier2_result
-                    
-            else:  # Tier 3
-                final_result = self._tier3_detect(llm_response, context)
-            
-            # Determine action based on result
-            failure_class = final_result.get("failure_class")
-            confidence = final_result.get("confidence", 0.5)
-            should_allow = final_result.get("should_allow")
-            
-            # Get policy for failure class
-            if failure_class:
-                policy = self.policy.get_policy(failure_class)
-                action = policy.action
-                severity = policy.severity
-            else:
-                if should_allow is False:
-                    action = EnforcementAction.WARN
-                    severity = SeverityLevel.MEDIUM
-                else:
-                    action = EnforcementAction.ALLOW
-                    severity = None
-            
-            processing_time = (time.time() - start_time) * 1000
-            
-            return DetectionResult(
-                action=action,
-                tier_used=tier_decision.tier,
-                method=final_result.get("method", "unknown"),
-                confidence=confidence,
-                processing_time_ms=processing_time,
-                failure_class=failure_class,
-                severity=severity,
-                explanation=final_result.get("explanation", "Analysis completed")
-            )
-        
-        except Exception as e:
-            print(f"Error in evaluate_response: {e}")
-            processing_time = (time.time() - start_time) * 1000
-            return DetectionResult(
-                action=EnforcementAction.ALLOW,
-                tier_used=1,
-                method="error_fallback",
-                confidence=0.5,
-                processing_time_ms=processing_time,
-                failure_class=None,
-                severity=None,
-                explanation=f"Detection error - allowing conservatively: {str(e)[:100]}"
-            )
     
     def get_tier_stats(self) -> Dict[str, Any]:
         """Get tier distribution statistics."""

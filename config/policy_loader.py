@@ -132,6 +132,41 @@ class PolicyLoader:
         thresholds = self._policy.get("thresholds", {})
         return thresholds.get(severity.value, 0.5)
     
+    def get_tier1_cutoff(self) -> float:
+        """Get the Tier 1 confidence cutoff."""
+        thresholds = self._policy.get("thresholds", {})
+        return thresholds.get("tier1_cutoff", 0.80)
+    
+    def get_tier2_cutoff(self) -> float:
+        """Get the Tier 2 confidence cutoff."""
+        thresholds = self._policy.get("thresholds", {})
+        return thresholds.get("tier2_cutoff", 0.15)
+    
+    def get_uncertain_default(self) -> float:
+        """Get the default confidence for uncertain (clean) requests."""
+        thresholds = self._policy.get("thresholds", {})
+        return thresholds.get("uncertain_default", 0.95)
+    
+    def get_observability_config(self) -> Dict[str, Any]:
+        """Get OpenTelemetry observability configuration."""
+        obs = self._policy.get("observability", {})
+        return {
+            "enabled": obs.get("enabled", False),
+            "service_name": obs.get("service_name", "sovereign-ai-guard"),
+            "otlp_endpoint": obs.get("otlp_endpoint", "http://localhost:4317"),
+            "sampling_rate": obs.get("sampling_rate", 1.0),
+            "export_timeout_seconds": obs.get("export_timeout_seconds", 10),
+        }
+    
+    def get_llm_config(self) -> Dict[str, Any]:
+        """Get LLM provider configuration."""
+        providers = self._policy.get("llm_providers", {})
+        return {
+            "groq_model": providers.get("groq_model", "llama-3.3-70b-versatile"),
+            "ollama_model": providers.get("ollama_model", "llama3.2"),
+            "ollama_base_url": providers.get("ollama_base_url", "http://localhost:11434"),
+        }
+    
     def should_enforce(
         self, 
         failure_class: str, 

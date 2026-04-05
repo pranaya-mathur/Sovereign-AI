@@ -6,6 +6,8 @@ Provides unified interface for LLM calls with fallback support.
 import os
 from typing import Dict, Any, Optional
 from abc import ABC, abstractmethod
+import time
+from opentelemetry import trace
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -35,6 +37,7 @@ class GroqProvider(LLMProvider):
         self.api_key = api_key or os.getenv("GROQ_API_KEY")
         self.model = model
         self.client = None
+        self.tracer = trace.get_tracer("sovereign-llm-provider")
 
         if self.api_key:
             try:
@@ -53,28 +56,30 @@ class GroqProvider(LLMProvider):
                 print(f"Warning: Groq initialization failed: {e}")
 
     def generate(self, prompt: str, **kwargs) -> Dict[str, Any]:
-        """Generate response using Groq API."""
-        if not self.client:
-            raise ValueError("Groq API key not configured")
+        """Generate response using Groq API with tracing."""
+        with self.tracer.start_as_current_span(f"groq_generate:{self.model}") as span:
+            if not self.client:
+                raise ValueError("Groq API key not configured")
 
-        try:
-            from langchain_core.messages import HumanMessage
+            try:
+                from langchain_core.messages import HumanMessage
 
-            response = self.client.invoke([HumanMessage(content=prompt)])
-            return {
-                "content": response.content,
-                "model": self.model,
-                "provider": "groq",
-                "success": True,
-            }
-        except Exception as e:
-            return {
-                "content": "",
-                "model": self.model,
-                "provider": "groq",
-                "success": False,
-                "error": str(e),
-            }
+                response = self.client.invoke([HumanMessage(content=prompt)])
+                return {
+                    "content": response.content,
+                    "model": self.model,
+                    "provider": "groq",
+                    "success": True,
+                }
+            except Exception as e:
+                span.record_exception(e)
+                return {
+                    "content": "",
+                    "model": self.model,
+                    "provider": "groq",
+                    "success": False,
+                    "error": str(e),
+                }
 
     def is_available(self) -> bool:
         """Check if Groq is configured and accessible."""
@@ -99,6 +104,7 @@ class OllamaProvider(LLMProvider):
         self.model = model
         self.base_url = base_url
         self.client = None
+        self.tracer = trace.get_tracer("sovereign-llm-provider")
 
         try:
             from langchain_ollama import OllamaLLM
@@ -116,26 +122,28 @@ class OllamaProvider(LLMProvider):
             print(f"Warning: Ollama initialization failed: {e}")
 
     def generate(self, prompt: str, **kwargs) -> Dict[str, Any]:
-        """Generate response using Ollama."""
-        if not self.client:
-            raise ValueError("Ollama not configured")
+        """Generate response using Ollama with tracing."""
+        with self.tracer.start_as_current_span(f"ollama_generate:{self.model}") as span:
+            if not self.client:
+                raise ValueError("Ollama not configured")
 
-        try:
-            response = self.client.invoke(prompt)
-            return {
-                "content": response,
-                "model": self.model,
-                "provider": "ollama",
-                "success": True,
-            }
-        except Exception as e:
-            return {
-                "content": "",
-                "model": self.model,
-                "provider": "ollama",
-                "success": False,
-                "error": str(e),
-            }
+            try:
+                response = self.client.invoke(prompt)
+                return {
+                    "content": response,
+                    "model": self.model,
+                    "provider": "ollama",
+                    "success": True,
+                }
+            except Exception as e:
+                span.record_exception(e)
+                return {
+                    "content": "",
+                    "model": self.model,
+                    "provider": "ollama",
+                    "success": False,
+                    "error": str(e),
+                }
 
     def is_available(self) -> bool:
         """Check if Ollama is running and accessible."""
@@ -151,13 +159,26 @@ class OllamaProvider(LLMProvider):
 class LLMProviderManager:
     """Manages multiple LLM providers with fallback support."""
 
-    def __init__(self):
+    def __init__(self, policy_path: str = "config/policy.yaml"):
         """Initialize provider manager with Groq and Ollama."""
         self.providers = []
+        
+        # Load policy configuration
+        from config.policy_loader import PolicyLoader
+        try:
+            policy = PolicyLoader(policy_path)
+            llm_config = policy.get_llm_config()
+        except Exception as e:
+            print(f"⚠️ Could not load policy for LLM providers: {e}")
+            llm_config = {
+                "groq_model": "llama-3.3-70b-versatile",
+                "ollama_model": "llama3.2",
+                "ollama_base_url": "http://localhost:11434"
+            }
 
         # Try Groq first (faster, cloud-based)
         try:
-            groq = GroqProvider()
+            groq = GroqProvider(model=llm_config["groq_model"])
             if groq.is_available():
                 self.providers.append(groq)
                 print("✅ Groq provider initialized")
@@ -166,7 +187,10 @@ class LLMProviderManager:
 
         # Fallback to Ollama (local, always available if running)
         try:
-            ollama = OllamaProvider()
+            ollama = OllamaProvider(
+                model=llm_config["ollama_model"],
+                base_url=llm_config["ollama_base_url"]
+            )
             if ollama.is_available():
                 self.providers.append(ollama)
                 print("✅ Ollama provider initialized")

@@ -1,7 +1,7 @@
 # Sovereign AI - LLM Observability Platform
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
-[![Tests](https://img.shields.io/badge/tests-74%2F75%20passing-brightgreen.svg)](test_results_2026-02-16.txt)
+[![Tests](https://img.shields.io/badge/tests-74%2F75%20passing-brightgreen.svg)](tests/results/test_results_2026-02-16.txt)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
@@ -55,6 +55,14 @@ API docs: `http://localhost:8000/docs`
 - ✅ **Toxicity & Bias** - Harmful content
 - ✅ **Security Attacks** - SQL injection, XSS
 
+## Enterprise Features
+
+- 🛰️ **OpenTelemetry Observability** - Distributed tracing and metrics natively support Datadog, Grafana, and Honeycomb via OTLP.
+- 🛡️ **Cross-Platform Security** - ReDoS protection via thread-based timeouts ensures Windows/Mac/Linux compatibility.
+- ⚙️ **Hot-Swappable Configs** - Policy-driven thresholds and logic management in `policy.yaml`.
+- 🧠 **Dynamic LLMs** - Plug-and-play LLM providers for Tier 3, defaulting to `qwen3.5:9b` (Ollama) and `llama-3.3-70b` (Groq).
+- 🚀 **CI/CD Pipeline** - Built-in GCP `cloudbuild.yaml` for automated testing, artifact building, and zero-downtime GKE deployment.
+
 ## Python Usage
 
 ```python
@@ -79,13 +87,23 @@ echo "GROQ_API_KEY=your_key" >> .env  # Free: 14,400 req/day
 echo "OLLAMA_BASE_URL=http://localhost:11434" >> .env
 ```
 
-**Adjust policies** in `config/policy.yaml`:
+**Adjust policies & observability** in `config/policy.yaml`:
 ```yaml
+# Set LLM Providers
+llm_providers:
+  groq_model: "llama-3.3-70b-versatile"
+  ollama_model: "qwen3.5:9b"
+
+# Enable OpenTelemetry
+observability:
+  enabled: true
+  service_name: "sovereign-ai-guard"
+
+# Tune thresholds
 failure_policies:
   prompt_injection:
     severity: "critical"
     action: "block"
-    threshold: 0.65
 ```
 
 ## Deployment
@@ -166,7 +184,7 @@ streamlit run dashboard/admin_dashboard.py
 
 ## Test Results
 
-**Latest:** [Feb 16, 2026](test_results_2026-02-16.txt) - **74/75 passing (98.7%)** 🎉
+**Latest:** [Feb 16, 2026](tests/results/test_results_2026-02-16.txt) - **74/75 passing (98.7%)** 🎉
 
 ```bash
 ✅ API Tests:                    27/27
@@ -181,7 +199,7 @@ streamlit run dashboard/admin_dashboard.py
 → Production Ready
 ```
 
-**Previous:** [Feb 15, 2026](test_results_complete_2026-02-15.txt) - 71/72 passing (98.6%)
+**Previous:** [Feb 15, 2026](tests/results/test_results_complete_2026-02-15.txt) - 71/72 passing (98.6%)
 
 ## Requirements
 
