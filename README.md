@@ -21,7 +21,10 @@ Production-ready safety layer for LLM deployments. Detects hallucinations, promp
 # Clone & Install
 git clone https://github.com/pranaya-mathur/Sovereign-AI.git
 cd Sovereign-AI
-pip install -r requirements.txt
+pip install -e .
+
+# Initialize Configuration
+cp config/policy.example.yaml config/policy.yaml
 
 # Run (Tier 1 + 2 enabled by default)
 uvicorn api.main:app --host 0.0.0.0 --port 8000
@@ -64,6 +67,21 @@ API docs: `http://localhost:8000/docs`
 - 🚀 **CI/CD Pipeline** - Built-in GCP `cloudbuild.yaml` for automated testing, artifact building, and zero-downtime GKE deployment.
 - 🏎️ **Dynamic Hardware Binding** - Explicitly targets `cuda` or Apple Silicon `mps` ensuring minimum latency.
 - 🎯 **Domain Fine-Tuning** - Standalone training script to align embeddings with esoteric enterprise terminologies.
+
+### Open vs Pro Tier
+
+While the engine is fully open-source, we optionally provide a fully managed enterprise solution for teams that require SLA guarantees.
+
+| Feature | Open Source | Pro (Managed) |
+|---------|------------|---------------|
+| 🛡️ 3-Tier Edge Detection | ✅ | ✅ |
+| 🚀 Custom Embedding Training | ✅ (Local script) | ✅ (1-Click UI) |
+| ⚙️ Rule Hot-Swapping | ✅ (YAML) | ✅ (Web Dashboard) |
+| 📊 Telemetry | ✅ (OTLP Export) | ✅ (Built-in Analytics Platform) |
+| 🔐 SSO & Role-Based Access | ❌ | ✅ |
+| 📞 99.9% Uptime SLA & Support| ❌ | ✅ |
+
+For Pro tier inquiries, please open a discussion or reach out to the maintainers.
 
 ## Python Usage
 
@@ -196,7 +214,7 @@ streamlit run dashboard/admin_dashboard.py
 ✅ LangGraph Agent:              5/5
 ✅ LLM Providers:                6/6
 ✅ Performance Benchmarks:       3/3
-⚠️  Semantic Detector:            7/8 (1 threshold tuning issue)
+✅ Semantic Detector:            8/8 (GPU tuning applied)
 
 → Production Ready
 ```
