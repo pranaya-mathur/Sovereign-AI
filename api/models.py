@@ -17,12 +17,17 @@ class DetectionRequest(BaseModel):
         default=None,
         description="Optional context information (e.g., query, metadata)",
     )
+    session_id: Optional[str] = Field(
+        default=None,
+        description="Optional unique identifier for multi-turn conversational tracking",
+    )
     
     class Config:
         json_schema_extra = {
             "example": {
                 "llm_response": "According to a study from Harvard, this approach is effective.",
                 "context": {"query": "What's the best approach?"},
+                "session_id": "usr-123-chat-456",
             }
         }
 

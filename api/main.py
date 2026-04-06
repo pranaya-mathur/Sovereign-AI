@@ -116,6 +116,7 @@ async def detect(
         result = control_tower.evaluate_response(
             llm_response=request.llm_response,
             context=request.context or {},
+            session_id=getattr(request, "session_id", None)
         )
         
         return DetectionResponse(
@@ -155,6 +156,7 @@ async def detect_batch(
             result = control_tower.evaluate_response(
                 llm_response=req.llm_response,
                 context=req.context or {},
+                session_id=getattr(req, "session_id", None)
             )
             results.append({
                 "action": result.action.value,

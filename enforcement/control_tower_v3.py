@@ -20,6 +20,7 @@ from contracts.severity_levels import SeverityLevel, EnforcementAction
 from contracts.failure_classes import FailureClass
 from core.metrics import TierMetrics, DetectionTier
 from enforcement.tier_router import TierRouter, TierDecision
+from enforcement.dialog_orchestrator import DialogManager
 from signals.embeddings.semantic_detector import SemanticDetector
 from signals.regex.pattern_library import PatternLibrary
 
@@ -105,6 +106,7 @@ class ControlTowerV3:
         self.policy = PolicyLoader(policy_path)
         self.tier_router = TierRouter()
         self.metrics = TierMetrics()
+        self.dialog_manager = DialogManager()
         
         # Load Tier 1 patterns
         self.patterns = PatternLibrary.get_all_patterns()
@@ -451,7 +453,8 @@ class ControlTowerV3:
     def evaluate_response(
         self,
         llm_response: str,
-        context: Dict[str, Any] = None
+        context: Dict[str, Any] = None,
+        session_id: str = None
     ) -> DetectionResult:
         """
         Evaluate LLM response using 3-tier detection with OTel tracing.
@@ -467,6 +470,11 @@ class ControlTowerV3:
             span.set_attribute("response.length", len(llm_response))
             start_time = time.time()
             context = context or {}
+            
+            if session_id:
+                history = self.dialog_manager.get_history(session_id)
+                if history:
+                    context["dialog_history"] = history
             
             try:
                 # Tier 1: Fast regex detection
@@ -607,8 +615,7 @@ class ControlTowerV3:
                 span.set_attribute("detection.failure_class", f_class_final.value if f_class_final else "None")
                 span.set_attribute("detection.confidence", confidence)
                 span.set_attribute("detection.action", action.value)
-                
-                return DetectionResult(
+                result = DetectionResult(
                     action=action,
                     tier_used=tier_decision.tier,
                     method=final_result.get("method", "unknown"),
@@ -618,6 +625,11 @@ class ControlTowerV3:
                     severity=severity,
                     explanation=final_result.get("explanation", "Analysis completed")
                 )
+                
+                if session_id:
+                    self.dialog_manager.add_turn(session_id, llm_response, result.action.value)
+                    
+                return result
             
             except Exception as e:
                 logger.error(f"Error in evaluate_response: {e}")

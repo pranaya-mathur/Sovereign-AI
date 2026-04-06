@@ -158,6 +158,77 @@ class OllamaProvider(LLMProvider):
         except:
             return False
 
+class TransformersProvider(LLMProvider):
+    """Native Hugging Face local LLM provider executing entirely in local python memory."""
+
+    def __init__(self, model: str = "HuggingFaceTB/SmolLM-135MInstruct"):
+        """
+        Initialize Transformers provider.
+        """
+        self.model = model
+        self.pipeline = None
+        self.tracer = trace.get_tracer("sovereign-llm-provider")
+
+        try:
+            from transformers import pipeline
+            logger.info(f"⏳ Loading native transformers model: {model} (this may consume significant RAM)")
+            # Load tokenizer and model as a text-generation pipeline
+            self.pipeline = pipeline(
+                "text-generation",
+                model=self.model,
+                device_map="auto"
+            )
+        except ImportError:
+            raise ImportError(
+                "transformers not installed. Run: pip install transformers accelerate"
+            )
+        except Exception as e:
+            logger.warning(f"Transformers initialization failed: {e}")
+
+    def generate(self, prompt: str, **kwargs) -> Dict[str, Any]:
+        """Generate response using local HF pipeline."""
+        with self.tracer.start_as_current_span(f"transformers_generate:{self.model}") as span:
+            if not self.pipeline:
+                raise ValueError("Transformers pipeline not initialized")
+
+            try:
+                # Wrap with a standard interaction pattern
+                messages = [
+                    {"role": "user", "content": prompt}
+                ]
+                result = self.pipeline(
+                    messages,
+                    max_new_tokens=200,
+                    return_full_text=False,
+                    temperature=0.1
+                )
+                
+                # Depending on pipeline parsing return
+                content = result[0]["generated_text"]
+                if isinstance(content, list) and len(content) > 0 and "content" in content[-1]:
+                    content = content[-1]["content"]
+
+                return {
+                    "content": str(content).strip(),
+                    "model": self.model,
+                    "provider": "transformers",
+                    "success": True,
+                }
+            except Exception as e:
+                span.record_exception(e)
+                return {
+                    "content": "",
+                    "model": self.model,
+                    "provider": "transformers",
+                    "success": False,
+                    "error": str(e),
+                }
+
+    def is_available(self) -> bool:
+        """Check if pipeline is loaded to memory."""
+        return self.pipeline is not None
+
+
 
 class LLMProviderManager:
     """Manages multiple LLM providers with fallback support."""
@@ -179,8 +250,20 @@ class LLMProviderManager:
                 "ollama_base_url": "http://localhost:11434"
             }
 
+        # Check for Native overriding via env variables
+        use_native = os.getenv("USE_NATIVE_LLM", "false").lower() == "true"
+        native_model = os.getenv("NATIVE_LLM_MODEL", "HuggingFaceTB/SmolLM-135M-Instruct")
 
-        # Try Groq first (faster, cloud-based)
+        if use_native:
+            try:
+                native = TransformersProvider(model=native_model)
+                if native.is_available():
+                    self.providers.append(native)
+                    logger.info(f"✅ Native Transformers provider initialized ({native_model})")
+            except Exception as e:
+                logger.warning(f"⚠️ Native Transformers provider not available: {e}")
+
+        # Try Groq (faster, cloud-based)
         try:
             groq = GroqProvider(model=llm_config["groq_model"])
             if groq.is_available():

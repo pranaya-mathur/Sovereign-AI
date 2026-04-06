@@ -18,6 +18,8 @@ langchain-community>=0.0.20
 langchain-groq>=0.1.0
 langchain-ollama>=0.1.0
 structlog>=23.2.0
+transformers>=4.35.0
+accelerate>=0.24.0
 
 # Phase 4: Production deployment
 fastapi>=0.104.0
