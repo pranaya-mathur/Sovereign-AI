@@ -1,7 +1,9 @@
 """FastAPI application entry point."""
 
+import os
+import logging
 from contextlib import asynccontextmanager
-from typing import Dict, Any
+from typing import Dict, Any, List
 
 from fastapi import FastAPI, HTTPException, Depends, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -17,15 +19,23 @@ from api.dependencies import get_control_tower
 from api.middleware import MetricsMiddleware, RequestLoggingMiddleware
 from enforcement.control_tower_v3 import ControlTowerV3
 
+# Configure logging
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+logging.basicConfig(
+    level=getattr(logging, LOG_LEVEL),
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+logger = logging.getLogger(__name__)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifecycle management for FastAPI app."""
     # Startup
-    print("🚀 Starting LLM Observability API...")
+    logger.info("🚀 Starting LLM Observability API...")
     yield
     # Shutdown
-    print("🛑 Shutting down LLM Observability API...")
+    logger.info("🛑 Shutting down LLM Observability API...")
 
 
 app = FastAPI(
@@ -35,14 +45,24 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Add CORS middleware
+# CORS configuration
+CORS_ORIGINS_RAW = os.getenv("CORS_ORIGINS", "")
+if CORS_ORIGINS_RAW:
+    allow_origins = [origin.strip() for origin in CORS_ORIGINS_RAW.split(",") if origin.strip()]
+else:
+    # Default to development-friendly origins if not specified
+    allow_origins = ["http://localhost:3000", "http://localhost:5173", "http://localhost:8000"]
+
+# Safety check: If allow_credentials is True, origins cannot be ["*"]
+# Here we enforce explicit origins for security.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configure for production
+    allow_origins=allow_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 # Add custom middleware
 app.add_middleware(MetricsMiddleware)

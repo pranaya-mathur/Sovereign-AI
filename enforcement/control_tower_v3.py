@@ -108,15 +108,15 @@ class ControlTowerV3:
         
         # Load Tier 1 patterns
         self.patterns = PatternLibrary.get_all_patterns()
-        print(f"✅ Loaded {len(self.patterns)} Tier 1 regex patterns")
+        logger.info(f"✅ Loaded {len(self.patterns)} Tier 1 regex patterns")
         
         # Initialize Tier 2 (semantic detection)
         try:
             self.semantic_detector = SemanticDetector()
             self.tier2_available = True
-            print("✅ Tier 2 semantic detector initialized")
+            logger.info("✅ Tier 2 semantic detector initialized")
         except Exception as e:
-            print(f"⚠️ Warning: Semantic detector unavailable: {e}")
+            logger.warning(f"⚠️ Warning: Semantic detector unavailable: {e}")
             self.tier2_available = False
             self.semantic_detector = None
         
@@ -132,14 +132,14 @@ class ControlTowerV3:
                 from agent.langgraph_agent import PromptInjectionAgent
                 self.llm_agent = PromptInjectionAgent()
                 self.tier3_available = True
-                print("✅ Tier 3 LLM agent initialized")
+                logger.info("✅ Tier 3 LLM agent initialized")
             except Exception as e:
-                print(f"⚠️ Warning: LLM agent initialization failed: {e}")
-                print("   Make sure Groq API key is set in .env or Ollama is running")
+                logger.warning(f"⚠️ Warning: LLM agent initialization failed: {e}")
+                logger.info("   Make sure Groq API key is set in .env or Ollama is running")
                 self.tier3_available = False
         else:
             self.tier3_available = False
-            print("ℹ️ Tier 3 LLM agent disabled (set enable_tier3=True in dependencies.py to enable)")
+            logger.info("ℹ️ Tier 3 LLM agent disabled (set ENABLE_TIER3=true in .env to enable)")
     
     def _safe_regex_search(self, pattern: re.Pattern, text: str, timeout_seconds: float = 0.5) -> Optional[re.Match]:
         """Safely search with regex with cross-platform timeout protection.
@@ -380,7 +380,7 @@ class ControlTowerV3:
                 try:
                     failure_class_enum = class_mapping.get(detected_class)
                 except Exception as e:
-                    print(f"Warning: Could not map failure class: {e}")
+                    logger.warning(f"Could not map failure class: {e}")
             
             explanation = f"Semantic analysis: {', '.join(detection_details[:3])}..." if detection_details else "Semantic analysis completed"
             
@@ -392,7 +392,7 @@ class ControlTowerV3:
                 "explanation": explanation
             }
         except Exception as e:
-            print(f"Warning: Semantic detection error: {e}")
+            logger.warning(f"Semantic detection error: {e}")
             return {
                 "confidence": 0.5,
                 "failure_class": None,
@@ -439,7 +439,7 @@ class ControlTowerV3:
                 "explanation": agent_result.get("reasoning", "LLM agent analysis completed")
             }
         except Exception as e:
-            print(f"Warning: LLM agent failed: {e}")
+            logger.warning(f"LLM agent failed: {e}")
             return {
                 "confidence": 0.5,
                 "failure_class": None,

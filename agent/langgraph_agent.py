@@ -7,6 +7,9 @@ Uses cached decisions for 99% of cases.
 from typing import Dict, Any, Optional, Union
 from dataclasses import dataclass
 import json
+import logging
+
+logger = logging.getLogger(__name__)
 
 try:
     from langgraph.graph import StateGraph, END
@@ -76,8 +79,8 @@ class PromptInjectionAgent:
             return workflow.compile()
         except Exception as e:
             # Fallback: Simple workflow without LangGraph
-            print(f"Warning: LangGraph workflow compilation failed: {e}")
-            print("Using simple fallback workflow")
+            logger.warning(f"LangGraph workflow compilation failed: {e}")
+            logger.info("Using simple fallback workflow")
             return None
     
     def _get_cached(self, state: Union[AgentState, Dict]) -> bool:
@@ -177,8 +180,8 @@ Remember: Medical misinformation and financial fraud are CRITICAL threats. Err o
                 state.reasoning = analysis["reasoning"]
             except json.JSONDecodeError as e:
                 # Fallback if LLM doesn't return valid JSON
-                print(f"JSON parse error: {e}")
-                print(f"LLM response: {result['content'][:200]}")
+                logger.error(f"JSON parse error: {e}")
+                logger.debug(f"LLM response: {result['content'][:200]}")
                 
                 # Try to extract decision from text
                 content_lower = result["content"].lower()
@@ -281,7 +284,7 @@ Remember: Medical misinformation and financial fraud are CRITICAL threats. Err o
                 final_state = self.workflow.invoke(initial_state)
                 return self._extract_result(final_state)
             except Exception as e:
-                print(f"Warning: Workflow failed, using simple analysis: {e}")
+                logger.warning(f"Workflow failed, using simple analysis: {e}")
                 return self._simple_analyze(prompt, context)
         else:
             return self._simple_analyze(prompt, context)

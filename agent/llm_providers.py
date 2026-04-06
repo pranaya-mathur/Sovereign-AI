@@ -7,11 +7,14 @@ import os
 from typing import Dict, Any, Optional
 from abc import ABC, abstractmethod
 import time
+import logging
 from opentelemetry import trace
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 
 class LLMProvider(ABC):
@@ -53,7 +56,7 @@ class GroqProvider(LLMProvider):
                     "langchain-groq not installed. Run: pip install langchain-groq"
                 )
             except Exception as e:
-                print(f"Warning: Groq initialization failed: {e}")
+                logger.warning(f"Groq initialization failed: {e}")
 
     def generate(self, prompt: str, **kwargs) -> Dict[str, Any]:
         """Generate response using Groq API with tracing."""
@@ -119,7 +122,7 @@ class OllamaProvider(LLMProvider):
                 "langchain-ollama not installed. Run: pip install langchain-ollama"
             )
         except Exception as e:
-            print(f"Warning: Ollama initialization failed: {e}")
+            logger.warning(f"Ollama initialization failed: {e}")
 
     def generate(self, prompt: str, **kwargs) -> Dict[str, Any]:
         """Generate response using Ollama with tracing."""
@@ -169,21 +172,22 @@ class LLMProviderManager:
             policy = PolicyLoader(policy_path)
             llm_config = policy.get_llm_config()
         except Exception as e:
-            print(f"⚠️ Could not load policy for LLM providers: {e}")
+            logger.warning(f"⚠️ Could not load policy for LLM providers: {e}")
             llm_config = {
                 "groq_model": "llama-3.3-70b-versatile",
                 "ollama_model": "llama3.2",
                 "ollama_base_url": "http://localhost:11434"
             }
 
+
         # Try Groq first (faster, cloud-based)
         try:
             groq = GroqProvider(model=llm_config["groq_model"])
             if groq.is_available():
                 self.providers.append(groq)
-                print("✅ Groq provider initialized")
+                logger.info("✅ Groq provider initialized")
         except Exception as e:
-            print(f"⚠️ Groq provider not available: {e}")
+            logger.warning(f"⚠️ Groq provider not available: {e}")
 
         # Fallback to Ollama (local, always available if running)
         try:
@@ -193,12 +197,13 @@ class LLMProviderManager:
             )
             if ollama.is_available():
                 self.providers.append(ollama)
-                print("✅ Ollama provider initialized")
+                logger.info("✅ Ollama provider initialized")
         except Exception as e:
-            print(f"⚠️ Ollama provider not available: {e}")
+            logger.warning(f"⚠️ Ollama provider not available: {e}")
 
         if not self.providers:
-            print("⚠️ No LLM providers available. Tier 3 detection will not work.")
+            logger.warning("⚠️ No LLM providers available. Tier 3 detection will not work.")
+
 
     def generate(self, prompt: str, **kwargs) -> Dict[str, Any]:
         """Generate response with automatic fallback."""
@@ -211,9 +216,14 @@ class LLMProviderManager:
 
         # Try each provider in order
         for provider in self.providers:
-            result = provider.generate(prompt, **kwargs)
-            if result["success"]:
-                return result
+            try:
+                result = provider.generate(prompt, **kwargs)
+                if result["success"]:
+                    return result
+                else:
+                    logger.warning(f"⚠️ Provider {provider.__class__.__name__} failed: {result.get('error')}")
+            except Exception as e:
+                logger.error(f"❌ Provider {provider.__class__.__name__} crashed: {e}")
 
         # All providers failed
         return {

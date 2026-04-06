@@ -9,9 +9,20 @@ from jose import JWTError, jwt
 
 
 # JWT Configuration
-SECRET_KEY = os.getenv("JWT_SECRET_KEY", "your-secret-key-change-in-production-use-openssl-rand-hex-32")
+_DEFAULT_SECRET = "your-secret-key-change-in-production-use-openssl-rand-hex-32"
+SECRET_KEY = os.getenv("JWT_SECRET_KEY", _DEFAULT_SECRET)
+
+# Production check: Fail-fast if using default secret in production
+ENVIRONMENT = os.getenv("ENV") or os.getenv("ENVIRONMENT") or "development"
+if ENVIRONMENT.lower() == "production" and SECRET_KEY == _DEFAULT_SECRET:
+    raise RuntimeError(
+        "CRITICAL SECURITY ERROR: JWT_SECRET_KEY must be explicitly set in production environments. "
+        "Use 'openssl rand -hex 32' to generate a secure key."
+    )
+
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 24 hours
+
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:

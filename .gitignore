@@ -65,3 +65,10 @@ logs/
 .cache/
 *.db
 *.sqlite
+
+# Active work / Scratch files
+scripts/test_prompt.py
+test_ollama.py
+tests/test_2026_futuristic.py
+tests/test_ultra_modern.py
+

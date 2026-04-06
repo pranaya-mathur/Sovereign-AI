@@ -3,6 +3,8 @@
 Provides CRUD operations for user management with SQLite/PostgreSQL.
 """
 
+import os
+import logging
 from typing import Optional, List
 from datetime import datetime
 import json
@@ -11,6 +13,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 from passlib.context import CryptContext
 
+logger = logging.getLogger(__name__)
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
@@ -25,7 +28,12 @@ class UserStore:
         """
         self.db = db
         self._ensure_table()
-        self._ensure_default_users()
+        
+        # Only seed default users if explicitly enabled or in development
+        should_seed = os.getenv("SEED_DEFAULT_USERS", "true").lower() == "true"
+        if should_seed:
+            self._ensure_default_users()
+
 
     def _ensure_table(self):
         """Ensure users table exists."""
@@ -45,7 +53,7 @@ class UserStore:
             """))
             self.db.commit()
         except Exception as e:
-            print(f"Warning: Could not create users table: {e}")
+            logger.warning(f"Could not create users table: {e}")
             self.db.rollback()
 
     def _ensure_default_users(self):
@@ -90,9 +98,9 @@ class UserStore:
                 )
                 
                 self.db.commit()
-                print("✅ Default users created (admin/admin123, testuser/user123)")
+                logger.info("✅ Default users created (admin/admin123, testuser/user123)")
         except Exception as e:
-            print(f"Warning: Could not create default users: {e}")
+            logger.warning(f"Could not create default users: {e}")
             self.db.rollback()
 
     def create_user(
@@ -171,7 +179,7 @@ class UserStore:
                 }
             return None
         except Exception as e:
-            print(f"Error getting user: {e}")
+            logger.error(f"Error getting user: {e}")
             return None
 
     def get_all_users(self) -> List[dict]:
@@ -201,7 +209,7 @@ class UserStore:
                 })
             return users
         except Exception as e:
-            print(f"Error getting users: {e}")
+            logger.error(f"Error getting users: {e}")
             return []
 
     def update_role(self, username: str, role: str) -> bool:
@@ -227,7 +235,7 @@ class UserStore:
             return True
         except Exception as e:
             self.db.rollback()
-            print(f"Error updating role: {e}")
+            logger.error(f"Error updating role: {e}")
             return False
 
     def update_tier(self, username: str, tier: str) -> bool:
@@ -253,7 +261,7 @@ class UserStore:
             return True
         except Exception as e:
             self.db.rollback()
-            print(f"Error updating tier: {e}")
+            logger.error(f"Error updating tier: {e}")
             return False
 
     def disable_user(self, username: str, disabled: bool = True) -> bool:
@@ -279,7 +287,7 @@ class UserStore:
             return True
         except Exception as e:
             self.db.rollback()
-            print(f"Error disabling user: {e}")
+            logger.error(f"Error disabling user: {e}")
             return False
 
     def delete_user(self, username: str) -> bool:
@@ -300,5 +308,5 @@ class UserStore:
             return True
         except Exception as e:
             self.db.rollback()
-            print(f"Error deleting user: {e}")
+            logger.error(f"Error deleting user: {e}")
             return False

@@ -1,6 +1,6 @@
 # Sovereign AI - LLM Observability Platform
 
-[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.11](https://img.shields.io/badge/python-3.11-blue.svg)](https://www.python.org/downloads/)
 [![Tests](https://img.shields.io/badge/tests-74%2F75%20passing-brightgreen.svg)](tests/results/test_results_2026-02-16.txt)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
@@ -25,10 +25,12 @@ pip install -e .
 
 # Initialize Configuration
 cp config/policy.example.yaml config/policy.yaml
+cp .env.example .env
 
 # Run (Tier 1 + 2 enabled by default)
 uvicorn api.main:app --host 0.0.0.0 --port 8000
 ```
+
 
 **Test Detection:**
 ```bash
@@ -100,14 +102,26 @@ print(f"{result.action} | Tier {result.tier_used} | {result.confidence:.2f}")
 
 ## Configuration
 
-**Enable Tier 3 (optional):**
+Sovereign AI is configured via environment variables and `config/policy.yaml`.
+
+**1. Enable Tier 3 (optional):**
+To enable deep LLM analysis (Tier 3), set `ENABLE_TIER3=true` in your `.env`:
 ```bash
-echo "GROQ_API_KEY=your_key" >> .env  # Free: 14,400 req/day
+echo "ENABLE_TIER3=true" >> .env
+echo "GROQ_API_KEY=your_key" >> .env  # Recommended (Fast/Free)
 # OR use local Ollama:
 echo "OLLAMA_BASE_URL=http://localhost:11434" >> .env
 ```
 
-**Adjust policies & observability** in `config/policy.yaml`:
+**2. Production Security Checklist:**
+Before deploying to production, ensure the following environment variables are set:
+- `ENV=production` - Enforces strict security checks.
+- `JWT_SECRET_KEY` - **Required in production.** Use `openssl rand -hex 32`.
+- `CORS_ORIGINS` - Comma-separated list of allowed origins (e.g., `https://app.yourdomain.com`).
+- `SEED_DEFAULT_USERS=false` - Disables default `admin123`/`user123` accounts.
+
+**3. Adjust policies & observability** in `config/policy.yaml`:
+
 ```yaml
 # Set LLM Providers
 llm_providers:
@@ -223,10 +237,13 @@ streamlit run dashboard/admin_dashboard.py
 
 ## Requirements
 
-- Python 3.10+
+- **Python: 3.11 explicitly supported**. We pin Python `3.11.*` because of native FAISS/Torch compatibility and CI consistency. 
 - 4GB RAM (8GB recommended)
 - 2+ CPU cores
-- Optional: GPU for faster embeddings
+- **CPU vs GPU**: 
+  - Standard installs pull CPU-compiled FAISS (`faiss-cpu`).
+  - To enable GPU acceleration for fast Tier 2 embeddings, uninstall `faiss-cpu` and install `faiss-gpu` and the CUDA `torch` variant that matches your system.
+
 
 ## Roadmap
 
