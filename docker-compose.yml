@@ -10,7 +10,7 @@ services:
       POSTGRES_PASSWORD: changeme_secure_password
       POSTGRES_DB: llm_observability
     ports:
-      - "5432:5432"
+      - "5454:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -31,7 +31,7 @@ services:
       DATABASE_URL: postgresql://llm_observability:changeme_secure_password@postgres:5432/llm_observability
       GROQ_API_KEY: ${GROQ_API_KEY:-}
     ports:
-      - "8000:8000"
+      - "8080:8000"
     depends_on:
       postgres:
         condition: service_healthy
@@ -69,9 +69,11 @@ services:
     volumes:
       - grafana_data:/var/lib/grafana
       - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources:ro
     networks:
       - llm-obs-network
     restart: unless-stopped
+
 
 volumes:
   postgres_data:
