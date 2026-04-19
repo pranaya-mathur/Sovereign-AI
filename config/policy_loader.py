@@ -157,6 +157,50 @@ class PolicyLoader:
             "sampling_rate": obs.get("sampling_rate", 1.0),
             "export_timeout_seconds": obs.get("export_timeout_seconds", 10),
         }
+
+    def get_pii_india_config(self) -> Dict[str, Any]:
+        cfg = self._policy.get("pii_india", {})
+        return {
+            "enabled": cfg.get("enabled", False),
+            "auto_scan": cfg.get("auto_scan", True),
+            "include_in_metadata": cfg.get("include_in_metadata", True),
+        }
+
+    def get_output_validation_config(self) -> Dict[str, Any]:
+        cfg = self._policy.get("output_validation", {})
+        return {
+            "enabled": cfg.get("enabled", False),
+            "groundedness_threshold": float(cfg.get("groundedness_threshold", 0.7)),
+            "max_retries": int(cfg.get("max_retries", 1)),
+        }
+
+    def get_external_moderation_config(self) -> Dict[str, Any]:
+        cfg = self._policy.get("external_moderation", {})
+        providers = cfg.get("providers")
+        if providers is None:
+            legacy = cfg.get("provider", "openai")
+            providers = [legacy] if isinstance(legacy, str) else ["openai"]
+        elif isinstance(providers, str):
+            providers = [providers]
+        else:
+            providers = list(providers)
+        return {
+            "enabled": cfg.get("enabled", False),
+            "providers": providers,
+            "provider": providers[0] if providers else "openai",
+            "fuse_weight": float(cfg.get("fuse_weight", 0.35)),
+        }
+
+    def get_compliance_audit_config(self) -> Dict[str, Any]:
+        cfg = self._policy.get("compliance_audit", {})
+        return {
+            "enabled": cfg.get("enabled", True),
+            "jsonl_path": cfg.get("jsonl_path", "data/compliance_audit.jsonl"),
+            "store_text_hashes_only": cfg.get("store_text_hashes_only", True),
+        }
+
+    def get_pro_tier_features(self) -> Dict[str, Any]:
+        return self._policy.get("pro_tier", {})
     
     def get_llm_config(self) -> Dict[str, Any]:
         """Get LLM provider configuration."""

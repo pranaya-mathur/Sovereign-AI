@@ -271,6 +271,51 @@ Remember: Medical misinformation and financial fraud are CRITICAL threats. Err o
                 "tier": final_state.tier,
             }
     
+    def revise_for_grounding(
+        self,
+        draft_response: str,
+        source_context: str,
+        user_prompt: str = "",
+    ) -> Dict[str, Any]:
+        """Tier 3: tighten draft against source context; returns JSON fields + score."""
+        from enforcement.output_validator import compute_groundedness
+
+        system_prompt = """You align an assistant draft with a provided SOURCE only.
+Remove or qualify claims not supported by SOURCE. Do not add new facts.
+Respond ONLY with valid JSON (no markdown):
+{"revised_response": "<text>", "notes": "<brief>"}"""
+
+        user_block = f"""USER_QUESTION (may be empty):\n{user_prompt[:2000]}\n\nSOURCE:\n{source_context[:6000]}\n\nDRAFT:\n{draft_response[:6000]}"""
+
+        result = self.llm_manager.generate(f"{system_prompt}\n\n{user_block}")
+        revised = draft_response
+        if result.get("success"):
+            content = result["content"].strip()
+            if content.startswith("```"):
+                lines = content.split("\n")
+                json_lines = [l for l in lines if not l.startswith("```")]
+                content = "\n".join(json_lines).strip()
+            try:
+                data = json.loads(content)
+                revised = data.get("revised_response", draft_response).strip()
+            except json.JSONDecodeError:
+                logger.warning("revise_for_grounding: invalid JSON from LLM")
+
+        score = compute_groundedness(revised, source_context)
+        return {
+            "revised_response": revised,
+            "groundedness_score": score,
+            "notes": "tier3_grounding_revision",
+        }
+
+    def validate_tool_for_agent(self, tool_name: str, allowed_tools) -> Dict[str, Any]:
+        """Explicit tool whitelist check for agent integrations (ASI02)."""
+        from enforcement.agentic_rails import validate_tool_use
+
+        allowed = set(allowed_tools) if allowed_tools is not None else None
+        ok, reason = validate_tool_use(tool_name, allowed)
+        return {"allowed": ok, "reason": reason, "tool_name": tool_name}
+
     def analyze(self, prompt: str, context: Dict[str, Any]) -> Dict[str, Any]:
         """Analyze prompt for injection (main entry point)."""
         initial_state = AgentState(

@@ -4,7 +4,9 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from api.dependencies import get_control_tower
+from config.policy_loader import PolicyLoader
 from enforcement.control_tower_v3 import ControlTowerV3
+from persistence.compliance_jsonl import ComplianceJSONLLogger
 from persistence.database import get_db
 
 
@@ -93,4 +95,46 @@ async def get_status():
         "service": "LLM Observability API",
         "version": "5.0.0",
         "status": "operational",
+    }
+
+
+@router.get("/policy_effectiveness")
+async def policy_effectiveness(
+    control_tower: ControlTowerV3 = Depends(get_control_tower),
+):
+    """Routing mix as a lightweight policy routing heatmap (tiers vs volume)."""
+    stats = control_tower.get_tier_stats()
+    dist = stats.get("distribution", {})
+    total = max(1, int(stats.get("total", 0)))
+    return {
+        "total_requests": total,
+        "heatmap_rows": [
+            {"tier": "tier1_regex", "count": stats.get("tier1_count", 0), "pct": dist.get("tier1_pct", 0)},
+            {"tier": "tier2_semantic", "count": stats.get("tier2_count", 0), "pct": dist.get("tier2_pct", 0)},
+            {"tier": "tier3_llm", "count": stats.get("tier3_count", 0), "pct": dist.get("tier3_pct", 0)},
+        ],
+        "health": stats.get("health"),
+        "drift_note": "Configure embedding baselines in policy for full drift alerts.",
+    }
+
+
+@router.get("/drift_signals")
+async def drift_signals(
+    control_tower: ControlTowerV3 = Depends(get_control_tower),
+    window: int = 200,
+):
+    """Lightweight drift-style signal from recent compliance rows (tier mix shift)."""
+    policy = PolicyLoader()
+    path = policy.get_compliance_audit_config().get("jsonl_path", "data/compliance_audit.jsonl")
+    store = ComplianceJSONLLogger(path)
+    rows = store.read_last(min(max(window, 10), 5000))
+    tiers = [r.get("tier_used") for r in rows if isinstance(r.get("tier_used"), int)]
+    t3_frac = sum(1 for t in tiers if t == 3) / max(1, len(tiers))
+    stats = control_tower.get_tier_stats()
+    return {
+        "window_size": len(tiers),
+        "tier3_fraction_recent_compliance_window": round(t3_frac, 4),
+        "tier3_routing_pct_live": stats.get("distribution", {}).get("tier3_pct"),
+        "drift_alert": t3_frac > 0.12 and len(tiers) >= 30,
+        "note": "Heuristic only; pair with embedding baselines for production drift.",
     }

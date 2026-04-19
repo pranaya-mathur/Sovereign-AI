@@ -237,3 +237,36 @@ llm_providers:
   ollama_model: "qwen3.5:9b"
   ollama_base_url: "http://localhost:11434"
 
+# 🇮🇳 India-sensitive PII (regex; optional auto metadata on evaluate)
+pii_india:
+  enabled: true
+  auto_scan: true
+  include_in_metadata: true
+
+# Post-LLM groundedness + Tier 3 self-correction (needs user_prompt or retrieval_context)
+output_validation:
+  enabled: false
+  groundedness_threshold: 0.7
+  max_retries: 1
+
+# Defense-in-depth: multi-provider fusion (keys via env; see providers/external_moderation.py)
+external_moderation:
+  enabled: false
+  providers:
+    - openai
+    # - azure   # AZURE_CONTENT_SAFETY_ENDPOINT + AZURE_CONTENT_SAFETY_KEY
+    # - anthropic  # ANTHROPIC_MODERATION_LITE=true + ANTHROPIC_API_KEY (Haiku probe)
+  fuse_weight: 0.35
+
+# Append-only JSONL audit (hashed prompts/responses by default)
+compliance_audit:
+  enabled: true
+  jsonl_path: "data/compliance_audit.jsonl"
+  store_text_hashes_only: true
+
+# Product flags (dashboard / policy toggles)
+pro_tier:
+  policy_export_button: true
+  visual_correction_history: true
+  sso_rbac_on_logs: false
+

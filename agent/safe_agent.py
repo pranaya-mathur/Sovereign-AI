@@ -1,5 +1,7 @@
 # agent/safe_agent.py
 
+from typing import Optional, Set
+
 from agent.context import AgentContext
 from agent.guard import AgentGuard
 from core.interceptor import OllamaInterceptor
@@ -10,10 +12,10 @@ class SafeAgent:
         self,
         agent_name: str,
         interceptor: OllamaInterceptor,
-        model: str = "phi3:latest"
-
+        model: str = "phi3:latest",
+        allowed_tool_actions: Optional[Set[str]] = None,
     ):
-        self.ctx = AgentContext(agent_name)
+        self.ctx = AgentContext(agent_name, allowed_tool_actions=allowed_tool_actions)
         self.guard = AgentGuard()
         self.interceptor = interceptor
         self.model = model

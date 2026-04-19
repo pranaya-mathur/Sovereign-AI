@@ -237,3 +237,29 @@ llm_providers:
   ollama_model: "qwen3.5:9b"
   ollama_base_url: "http://localhost:11434"
 
+pii_india:
+  enabled: true
+  auto_scan: true
+  include_in_metadata: true
+
+output_validation:
+  enabled: false
+  groundedness_threshold: 0.7
+  max_retries: 1
+
+external_moderation:
+  enabled: false
+  providers:
+    - openai
+  fuse_weight: 0.35
+
+compliance_audit:
+  enabled: true
+  jsonl_path: "data/compliance_audit.jsonl"
+  store_text_hashes_only: true
+
+pro_tier:
+  policy_export_button: true
+  visual_correction_history: true
+  sso_rbac_on_logs: false
+

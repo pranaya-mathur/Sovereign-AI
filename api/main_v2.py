@@ -18,6 +18,11 @@ from api.models import (
 from api.dependencies import get_control_tower
 from api.middleware import MetricsMiddleware, RequestLoggingMiddleware
 from api.metrics import router as metrics_router
+from api.routes import admin as admin_routes
+from api.routes import auth as auth_routes
+from api.routes import detection as detection_routes
+from api.routes import governance as governance_routes
+from api.routes import monitoring as monitoring_routes
 from enforcement.control_tower_v3 import ControlTowerV3
 from persistence.database import get_db, init_db
 from persistence.repository import DetectionRepository, MetricsRepository
@@ -62,6 +67,11 @@ app.add_middleware(RequestLoggingMiddleware)
 
 # Include metrics router
 app.include_router(metrics_router, tags=["metrics"])
+app.include_router(auth_routes.router)
+app.include_router(detection_routes.router)
+app.include_router(monitoring_routes.router)
+app.include_router(admin_routes.router)
+app.include_router(governance_routes.router)
 
 
 @app.get("/", response_model=Dict[str, str])

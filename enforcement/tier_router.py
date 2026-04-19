@@ -9,6 +9,8 @@ Routes requests to appropriate detection tier based on confidence:
 from dataclasses import dataclass
 from typing import Dict, Any, Tuple, Optional
 
+from providers.external_moderation import fuse_external_with_tier1
+
 
 @dataclass
 class TierDecision:
@@ -187,3 +189,12 @@ class TierRouter:
             "tier2": 0,
             "tier3": 0
         }
+
+    @staticmethod
+    def fuse_external(
+        tier1_result: Dict[str, Any],
+        external: Optional[Dict[str, Any]],
+        fuse_weight: float = 0.35,
+    ) -> Dict[str, Any]:
+        """Fuse external moderation scores into Tier-1 regex output before routing."""
+        return fuse_external_with_tier1(tier1_result, external, fuse_weight)

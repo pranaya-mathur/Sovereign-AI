@@ -131,7 +131,13 @@ st.markdown("---")
 st.sidebar.title("Navigation")
 page = st.sidebar.radio(
     "Go to",
-    ["📊 Overview", "👥 User Management", "🔍 Detection Monitor", "⚙️ System Settings"]
+    [
+        "📊 Overview",
+        "👥 User Management",
+        "🔍 Detection Monitor",
+        "📈 Policy & Governance",
+        "⚙️ System Settings",
+    ],
 )
 
 st.sidebar.markdown("---")
@@ -413,6 +419,103 @@ elif page == "🔍 Detection Monitor":
                 st.error(f"Error: {str(e)}")
         else:
             st.warning("Please enter text to analyze")
+
+
+# Page: Policy & Governance
+elif page == "📈 Policy & Governance":
+    st.header("Policy routing and compliance")
+    try:
+        pe = requests.get(
+            f"{API_BASE_URL}/api/monitoring/policy_effectiveness",
+            headers=get_headers(),
+        )
+        if pe.status_code == 200:
+            data = pe.json()
+            st.subheader("Tier routing mix")
+            rows = data.get("heatmap_rows", [])
+            if rows:
+                df = pd.DataFrame(rows)
+                st.dataframe(df, use_container_width=True)
+                fig = px.bar(df, x="tier", y="pct", title="Routing % by tier")
+                st.plotly_chart(fig, use_container_width=True)
+            st.caption(data.get("drift_note", ""))
+        else:
+            st.error(f"policy_effectiveness failed: {pe.status_code}")
+    except Exception as e:
+        st.error(str(e))
+
+    st.subheader("Drift-style signals (compliance window)")
+    try:
+        drift = requests.get(
+            f"{API_BASE_URL}/api/monitoring/drift_signals?window=200",
+            headers=get_headers(),
+        )
+        if drift.status_code == 200:
+            st.json(drift.json())
+        else:
+            st.warning(f"drift_signals: {drift.status_code}")
+    except Exception as e:
+        st.error(str(e))
+
+    st.subheader("Prometheus scrape (/metrics)")
+    st.caption("Same host as API; use Grafana or Prometheus server to scrape this text endpoint.")
+    if st.button("Fetch raw /metrics"):
+        try:
+            mr = requests.get(f"{API_BASE_URL}/metrics", timeout=10)
+            st.text(mr.text[:8000] if mr.status_code == 200 else mr.text[:2000])
+        except Exception as e:
+            st.error(str(e))
+
+    st.subheader("Output self-correction history")
+    if st.button("Load correction-history"):
+        try:
+            cr = requests.get(
+                f"{API_BASE_URL}/api/governance/correction-history?limit=80",
+                headers=get_headers(),
+            )
+            if cr.status_code == 200:
+                st.json(cr.json())
+            else:
+                st.error(cr.text[:500])
+        except Exception as e:
+            st.error(str(e))
+
+    st.subheader("India PII redaction (sample)")
+    sample = st.text_area("Text to redact", value="PAN ABCDE1234F phone +91 9876543210")
+    if st.button("Redact via API"):
+        try:
+            r = requests.post(
+                f"{API_BASE_URL}/api/governance/redact",
+                json={"text": sample},
+                headers={**get_headers(), "Content-Type": "application/json"},
+            )
+            if r.status_code == 200:
+                st.json(r.json())
+            else:
+                st.error(r.text[:500])
+        except Exception as e:
+            st.error(str(e))
+
+    st.subheader("Compliance JSONL export (admin)")
+    st.caption("Downloads append-only audit rows (hashed by default).")
+    if st.button("Fetch export preview"):
+        try:
+            r = requests.get(
+                f"{API_BASE_URL}/api/governance/compliance/export?max_lines=50",
+                headers=get_headers(),
+            )
+            if r.status_code == 200:
+                st.download_button(
+                    "Download JSONL",
+                    data=r.content,
+                    file_name="compliance_audit.jsonl",
+                    mime="application/x-ndjson",
+                )
+                st.text(r.text[:4000])
+            else:
+                st.error(f"{r.status_code}: {r.text[:500]}")
+        except Exception as e:
+            st.error(str(e))
 
 
 # Page: System Settings

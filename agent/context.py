@@ -1,9 +1,20 @@
 # agent/context.py
 
+from typing import Optional, Set
+
+
 class AgentContext:
-    def __init__(self, agent_name: str, max_steps: int = 5):
+    def __init__(
+        self,
+        agent_name: str,
+        max_steps: int = 5,
+        allowed_tool_actions: Optional[Set[str]] = None,
+    ):
         self.agent_name = agent_name
         self.max_steps = max_steps
+        self.allowed_tool_actions: Optional[frozenset] = (
+            frozenset(allowed_tool_actions) if allowed_tool_actions is not None else None
+        )
 
         self.current_step = 0
         self.actions = []
