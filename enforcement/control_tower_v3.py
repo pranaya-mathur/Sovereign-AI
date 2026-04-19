@@ -231,6 +231,39 @@ class ControlTowerV3:
                     result.explanation + " | Output self-corrected for grounding (Tier 3)."
                 ).strip(" |")
 
+        # ✅ RAG Rails: Faithfulness, Citations, Qdrant Grounding
+        rag_cfg = self.policy.get_rag_config()
+        if rag_cfg.get("enabled", False):
+            try:
+                from signals.rag_logic import RAGRail
+                rag_rail = RAGRail(self.semantic_detector)
+                
+                # 1. Faithfulness
+                retrieval_ctx = context.get("retrieval_context") or context.get("documents")
+                faith = rag_rail.check_faithfulness(
+                    llm_response, 
+                    retrieval_ctx, 
+                    threshold=rag_cfg.get("faithfulness_threshold", 0.65)
+                )
+                result.metadata["rag_faithfulness"] = faith
+                
+                # 2. Citations
+                citations = rag_rail.check_citations(llm_response)
+                result.metadata["rag_citations"] = citations
+                
+                # 3. Qdrant Grounding
+                if rag_cfg.get("qdrant_grounding", False):
+                    grounding = rag_rail.verify_grounding_with_qdrant(llm_response)
+                    result.metadata["rag_qdrant_grounding"] = grounding
+                
+                # Force warning if unfaithful
+                if faith.get("status") == "unfaithful":
+                    result.action = EnforcementAction.WARN
+                    result.explanation += " | Unfaithful to source context"
+                    
+            except Exception as e:
+                logger.warning(f"RAG rails failed: {e}")
+
         ext_meta = result.metadata.get("external_moderation")
         if ext_meta:
             span.set_attribute("sovereign.external_provider", str(ext_meta.get("provider", "")))
@@ -598,6 +631,96 @@ class ControlTowerV3:
                 "explanation": f"LLM agent error - allowing conservatively"
             }
     
+    def evaluate_input(
+        self,
+        user_prompt: Optional[str],
+        context: Optional[Dict[str, Any]] = None,
+        session_id: Optional[str] = None,
+    ) -> DetectionResult:
+        """
+        Evaluate User Prompt using 3-tier detection with context.
+        
+        Args:
+            user_prompt: The raw user input to analyze
+            context: Optional context information
+            session_id: Optional unique identifier for multi-turn tracking
+            
+        Returns:
+            DetectionResult with enforcement decision
+        """
+        if user_prompt is None:
+            return DetectionResult(
+                action=EnforcementAction.LOG,
+                tier_used=0,
+                method="error",
+                confidence=0.0,
+                processing_time_ms=0.0,
+                explanation="Received None prompt"
+            )
+
+        with self.tracer.start_as_current_span("evaluate_input") as span:
+            span.set_attribute("input.length", len(user_prompt))
+            start_time = time.time()
+            context = context or {}
+            history = []
+            
+            if session_id:
+                history = self.dialog_manager.get_history(session_id)
+                if history:
+                    context["dialog_history"] = history
+            
+            try:
+                # Tier 1: Fast regex detection
+                tier1_result = self._tier1_detect(user_prompt)
+                
+                # Input-specific routing logic (always consider history if available)
+                tier_decision = self.tier_router.route(
+                    tier1_result,
+                    tier1_cutoff=self.policy.get_tier1_cutoff(),
+                    tier2_cutoff=self.policy.get_tier2_cutoff(),
+                    history=history
+                )
+                
+                # Execute selected tier
+                if tier_decision.tier == 1:
+                    final_result = tier1_result
+                elif tier_decision.tier == 2:
+                    final_result = self._tier2_detect(user_prompt, tier1_result)
+                else:
+                    final_result = self._tier3_detect(user_prompt, context)
+                
+                f_class_final = final_result.get("failure_class")
+                confidence = final_result.get("confidence", 0.5)
+                should_allow = final_result.get("should_allow")
+                
+                if f_class_final:
+                    policy = self.policy.get_policy(f_class_final)
+                    action = policy.action
+                    severity = policy.severity
+                else:
+                    action = EnforcementAction.ALLOW if should_allow is not False else EnforcementAction.WARN
+                    severity = SeverityLevel.MEDIUM if action == EnforcementAction.WARN else None
+                
+                res = DetectionResult(
+                    action=action,
+                    tier_used=tier_decision.tier,
+                    method=f"input_{final_result.get('method', 'unknown')}",
+                    confidence=confidence,
+                    processing_time_ms=(time.time() - start_time) * 1000,
+                    failure_class=f_class_final,
+                    severity=severity,
+                    findings=final_result.get("findings", []),
+                    explanation=f"Input scan: {final_result.get('explanation', 'Analysis completed')}"
+                )
+                
+                if session_id:
+                    self.dialog_manager.add_turn(session_id, user_prompt, res.action.value)
+                
+                return res
+            except Exception as e:
+                logger.error(f"Error in evaluate_input: {e}")
+                return DetectionResult(EnforcementAction.LOG, 0, "error", 0.0, 0.0, explanation=str(e))
+
     def evaluate_response(
         self,
         llm_response: Optional[str],
@@ -628,6 +751,7 @@ class ControlTowerV3:
             span.set_attribute("response.length", len(llm_response))
             start_time = time.time()
             context = context or {}
+            history = []
             
             if session_id:
                 history = self.dialog_manager.get_history(session_id)
@@ -689,11 +813,12 @@ class ControlTowerV3:
                     self._emit_compliance(llm_response, res, context, session_id)
                     return res
                 
-                # Route to appropriate tier using policy-defined cutoffs
+                # Route to appropriate tier using policy-defined cutoffs and session history
                 tier_decision = self.tier_router.route(
                     tier1_result,
                     tier1_cutoff=self.policy.get_tier1_cutoff(),
-                    tier2_cutoff=self.policy.get_tier2_cutoff()
+                    tier2_cutoff=self.policy.get_tier2_cutoff(),
+                    history=history
                 )
                 span.set_attribute("tier_routing.decision", tier_decision.tier)
                 

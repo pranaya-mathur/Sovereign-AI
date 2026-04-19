@@ -374,11 +374,11 @@ class SemanticDetector:
             harm_db = get_harm_db()
             harm_db.reload_if_changed()
             
-            # ✅ Use 0.20 threshold for better medical harm detection
-            detected_class, vector_score = harm_db.detect_harm(response, threshold=0.20)
+            # ✅ Use 0.40 threshold to reduce false positives (Benign text often scores 0.20-0.35)
+            detected_class, vector_score = harm_db.detect_harm(response, threshold=0.40)
             
             # ✅ Early return if ANY harm detected above threshold (don't filter by requested class)
-            if detected_class and vector_score > 0.20:
+            if detected_class and vector_score > 0.40:
                 logger.info(f"✅ Vector DB detected: {detected_class} (score: {vector_score:.3f})")
                 return {
                     "detected": True,

@@ -174,6 +174,15 @@ class PolicyLoader:
             "max_retries": int(cfg.get("max_retries", 1)),
         }
 
+    def get_rag_config(self) -> Dict[str, Any]:
+        """Get RAG-specific rails configuration."""
+        cfg = self._policy.get("rag_rails", {})
+        return {
+            "enabled": cfg.get("enabled", False),
+            "qdrant_grounding": cfg.get("qdrant_grounding", False),
+            "faithfulness_threshold": float(cfg.get("faithfulness_threshold", 0.65)),
+        }
+
     def get_external_moderation_config(self) -> Dict[str, Any]:
         cfg = self._policy.get("external_moderation", {})
         providers = cfg.get("providers")

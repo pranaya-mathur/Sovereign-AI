@@ -170,6 +170,15 @@ class DetectionResponse(BaseModel):
     rate_limit: dict
 
 
+class FeedbackRequest(BaseModel):
+    """Model for submitting feedback on detection results."""
+    request_id: str
+    text: str
+    actual_label: str # e.g. "safe", "dpdp_pii", "fraud"
+    is_correct: bool
+    comment: Optional[str] = None
+
+
 @router.post("/detect", response_model=DetectionResponse)
 async def detect(
     request: DetectionRequest,
@@ -321,3 +330,29 @@ async def detect(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Detection failed: {str(e)[:100]}",
         )
+
+@router.post("/feedback/submit", status_code=status.HTTP_201_CREATED)
+async def submit_feedback(
+    request: FeedbackRequest,
+    current_user = Depends(get_current_user),
+):
+    """Submit feedback for a previous detection result (Active Learning)."""
+    import json
+    try:
+        # Log to secondary feedback file for processing
+        feedback_file = "data/active_learning_feedback.jsonl"
+        with open(feedback_file, "a", encoding="utf-8") as f:
+            f.write(json.dumps({
+                "ts": str(uuid.uuid4()), 
+                "user": current_user.username,
+                "request_id": request.request_id,
+                "text": request.text,
+                "actual_label": request.actual_label,
+                "is_correct": request.is_correct,
+                "comment": request.comment
+            }) + "\n")
+            
+        return {"status": "success", "message": "Feedback received for active learning"}
+    except Exception as e:
+        logger.error(f"Failed to save feedback: {e}")
+        raise HTTPException(status_code=500, detail="Feedback storage failed")

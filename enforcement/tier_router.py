@@ -7,7 +7,7 @@ Routes requests to appropriate detection tier based on confidence:
 """
 
 from dataclasses import dataclass
-from typing import Dict, Any, Tuple, Optional
+from typing import Dict, Any, Tuple, Optional, List
 
 from providers.external_moderation import fuse_external_with_tier1
 
@@ -52,18 +52,21 @@ class TierRouter:
         self, 
         tier1_result: Dict[str, Any], 
         tier1_cutoff: Optional[float] = None, 
-        tier2_cutoff: Optional[float] = None
+        tier2_cutoff: Optional[float] = None,
+        history: Optional[List[Dict[str, Any]]] = None
     ) -> TierDecision:
-        """Route to appropriate tier based on Tier 1 confidence.
+        """Route to appropriate tier based on Tier 1 confidence and optional session history.
         
         Priority:
         1. Explicit cutoffs passed to this method
         2. Thresholds provided during initialization
+        3. History-based adjustments (e.g. repeated warnings escalate to Tier 3)
         
         Args:
             tier1_result: Result dictionary from Tier 1 detection
             tier1_cutoff: Optional override for Tier 1 finality cutoff
             tier2_cutoff: Optional override for Tier 2 semantic cutoff
+            history: Optional list of previous turns in this session
             
         Returns:
             TierDecision indicating which tier to use
@@ -77,6 +80,18 @@ class TierRouter:
         confidence = tier1_result.get("confidence", 0.5)
         method = tier1_result.get("method", "unknown")
         
+        # ✅ MULTI-TURN ESCALATION: If history shows multiple warnings, be more suspicious
+        if history:
+            warning_count = sum(1 for turn in history if turn.get("status") in ["warn", "warned"])
+            if warning_count >= 2:
+                # Force escalation to at least Tier 2, if not Tier 3
+                if confidence > t2_cutoff:
+                    t1_cutoff = 0.99 # Force Tier 2/3 unless extremely high confidence
+                else:
+                    t2_cutoff = 0.5 # Lower Tier 3 threshold
+                
+                logger.info(f"Escalating due to session history ({warning_count} previous warnings)")
+
         # Tier 1: High confidence match (>= cutoff) from TRUSTED regex methods
         is_trusted_method = method in ["regex_strong", "regex_anti", "regex_pathological", "regex_length_check", "regex_uncertain"]
         

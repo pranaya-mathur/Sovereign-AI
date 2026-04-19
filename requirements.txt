@@ -9,6 +9,7 @@ sentence-transformers>=2.2.0
 numpy>=1.24.0
 torch>=2.0.0
 faiss-cpu>=1.7.4  # Vector DB for semantic similarity search
+qdrant-client>=1.7.0  # RAG-specific vector DB
 
 # Phase 2: LLM Agent (Tier 3) - 100% Free
 langgraph>=0.0.40
@@ -30,6 +31,7 @@ alembic>=1.12.0
 prometheus-client>=0.19.0
 python-json-logger>=2.0.0
 python-multipart>=0.0.6
+redis>=5.0.0  # Distributed caching and rate limiting
 
 # Phase 5: Authentication & Dashboard
 python-jose[cryptography]>=3.3.0

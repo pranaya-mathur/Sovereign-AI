@@ -71,6 +71,37 @@ A public evaluation space is available for testing the detection logic on synthe
 
 *(Note: Public demo uses shared Tier 2/3 credits and may be rate-limited)*
 
+- **Active Learning Feedback Loop**: Collect human corrections via `/api/feedback/submit` and auto-refine vector DBs using `scripts/active_learning/refine_logic.py`.
+- **RAG-Specific Rails**: Faithfulness scoring, citation verification, and Qdrant-based grounding checks to prevent hallucinations in retrieval-augmented pipelines.
+- **India Compliance Packs**: Out-of-the-box checks for DPDP Act 2023 and IT Rules 2021.
+- **Enterprise Performance**: Distributed rate limiting using Redis, GPU-accelerated FAISS for Tier 2, and support for vLLM/TGI/Fireworks for local Tier 3 clusters.
+- **Native Integrations**: Official middleware wrappers for LangChain and LlamaIndex.
+
+## 🛠️ Tech Stack & Integrations
+
+- **Enforcement**: TierRouter (Context-Aware), ControlTowerV3
+- **Vector DB**: FAISS (GPU/CPU), Qdrant (RAG Grounding)
+- **Inference**: vLLM, TGI, Groq, Ollama, Fireworks
+- **Log Arch**: Redis, SQL, JSONL (DPDP Audit)
+- **Scaling**: Kubernetes HPA, Prometheus/Grafana
+
+## 🚀 Framework Wrappers
+
+### LangChain
+```python
+from integrations.langchain_wrapper import SovereignLangChainGuard
+guard = SovereignLangChainGuard(api_key="your_key")
+chain = prompt | model | guard | parser
+```
+
+### LlamaIndex
+```python
+from integrations.llamaindex_wrapper import SovereignLlamaGuard
+guard = SovereignLlamaGuard()
+response = query_engine.query("What is DPDP?")
+guarded_res = guard.postprocess_response(response)
+```
+
 ## What It Detects
 
 - ✅ **Prompt Injection** - System manipulation, jailbreaks (DAN, Roleplay)

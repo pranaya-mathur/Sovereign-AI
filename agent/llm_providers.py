@@ -229,6 +229,116 @@ class TransformersProvider(LLMProvider):
         return self.pipeline is not None
 
 
+class VLLMProvider(LLMProvider):
+    """Local LLM provider using vLLM engine for high throughput."""
+
+    def __init__(self, base_url: str = "http://localhost:8000/v1", model: str = "meta-llama/Llama-3.1-8B-Instruct"):
+        self.base_url = base_url
+        self.model = model
+        self.tracer = trace.get_tracer("sovereign-llm-provider")
+
+    def generate(self, prompt: str, **kwargs) -> Dict[str, Any]:
+        with self.tracer.start_as_current_span(f"vllm_generate:{self.model}") as span:
+            try:
+                import httpx
+                payload = {
+                    "model": self.model,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": 0.0
+                }
+                response = httpx.post(f"{self.base_url}/chat/completions", json=payload, timeout=30.0)
+                if response.status_code == 200:
+                    return {
+                        "content": response.json()["choices"][0]["message"]["content"],
+                        "model": self.model,
+                        "provider": "vllm",
+                        "success": True,
+                    }
+                return {"success": False, "error": f"vLLM error: {response.text}"}
+            except Exception as e:
+                return {"success": False, "error": str(e)}
+
+    def is_available(self) -> bool:
+        try:
+            import httpx
+            return httpx.get(f"{self.base_url}/models", timeout=2.0).status_code == 200
+        except:
+            return False
+
+
+class TGIProvider(LLMProvider):
+    """Local LLM provider using Text Generation Inference (TGI)."""
+
+    def __init__(self, base_url: str = "http://localhost:8080"):
+        self.base_url = base_url
+        self.tracer = trace.get_tracer("sovereign-llm-provider")
+
+    def generate(self, prompt: str, **kwargs) -> Dict[str, Any]:
+        with self.tracer.start_as_current_span("tgi_generate") as span:
+            try:
+                import httpx
+                payload = {
+                    "inputs": prompt,
+                    "parameters": {"temperature": 0.01, "max_new_tokens": 512}
+                }
+                response = httpx.post(f"{self.base_url}/generate", json=payload, timeout=30.0)
+                if response.status_code == 200:
+                    return {
+                        "content": response.json()["generated_text"],
+                        "provider": "tgi",
+                        "success": True,
+                    }
+                return {"success": False, "error": f"TGI error: {response.text}"}
+            except Exception as e:
+                return {"success": False, "error": str(e)}
+
+    def is_available(self) -> bool:
+        try:
+            import httpx
+            return httpx.get(f"{self.base_url}/health", timeout=2.0).status_code == 200
+        except:
+            return False
+
+
+
+class FireworksProvider(LLMProvider):
+    """Fireworks AI provider for fast inference."""
+
+    def __init__(self, api_key: Optional[str] = None, model: str = "accounts/fireworks/models/llama-v3p1-70b-instruct"):
+        self.api_key = api_key or os.getenv("FIREWORKS_API_KEY")
+        self.model = model
+        self.tracer = trace.get_tracer("sovereign-llm-provider")
+
+    def generate(self, prompt: str, **kwargs) -> Dict[str, Any]:
+        with self.tracer.start_as_current_span(f"fireworks_generate:{self.model}") as span:
+            try:
+                import httpx
+                headers = {"Authorization": f"Bearer {self.api_key}"}
+                payload = {
+                    "model": self.model,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": 0.0
+                }
+                response = httpx.post(
+                    "https://api.fireworks.ai/inference/v1/chat/completions",
+                    json=payload,
+                    headers=headers,
+                    timeout=20.0
+                )
+                if response.status_code == 200:
+                    return {
+                        "content": response.json()["choices"][0]["message"]["content"],
+                        "model": self.model,
+                        "provider": "fireworks",
+                        "success": True,
+                    }
+                return {"success": False, "error": f"Fireworks error: {response.text}"}
+            except Exception as e:
+                return {"success": False, "error": str(e)}
+
+    def is_available(self) -> bool:
+        return self.api_key is not None
+
 
 class LLMProviderManager:
     """Manages multiple LLM providers with fallback support."""
@@ -263,6 +373,26 @@ class LLMProviderManager:
             except Exception as e:
                 logger.warning(f"⚠️ Native Transformers provider not available: {e}")
 
+        # Try vLLM (high-performance local)
+        try:
+            vllm_url = os.getenv("VLLM_URL", "http://localhost:8000/v1")
+            vllm = VLLMProvider(base_url=vllm_url)
+            if vllm.is_available():
+                self.providers.append(vllm)
+                logger.info(f"✅ vLLM provider initialized at {vllm_url}")
+        except Exception:
+            pass
+
+        # Try TGI (local)
+        try:
+            tgi_url = os.getenv("TGI_URL", "http://localhost:8080")
+            tgi = TGIProvider(base_url=tgi_url)
+            if tgi.is_available():
+                self.providers.append(tgi)
+                logger.info(f"✅ TGI provider initialized at {tgi_url}")
+        except Exception:
+            pass
+
         # Try Groq (faster, cloud-based)
         try:
             groq = GroqProvider(model=llm_config["groq_model"])
@@ -271,6 +401,15 @@ class LLMProviderManager:
                 logger.info("✅ Groq provider initialized")
         except Exception as e:
             logger.warning(f"⚠️ Groq provider not available: {e}")
+
+        # Try Fireworks
+        try:
+            fireworks = FireworksProvider()
+            if fireworks.is_available():
+                self.providers.append(fireworks)
+                logger.info("✅ Fireworks provider initialized")
+        except Exception:
+            pass
 
         # Fallback to Ollama (local, always available if running)
         try:

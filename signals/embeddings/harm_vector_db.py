@@ -148,8 +148,17 @@ class HarmVectorDB:
         # Create FAISS index
         # IndexFlatIP = Inner Product (cosine similarity for normalized vectors)
         dimension = embeddings_array.shape[1]
-        self.index = faiss.IndexFlatIP(dimension)
+        cpu_index = faiss.IndexFlatIP(dimension)
         
+        # ✅ SWITCH TO GPU FAISS IF AVAILABLE
+        try:
+            res = faiss.StandardGpuResources()
+            self.index = faiss.index_cpu_to_gpu(res, 0, cpu_index)
+            logger.info("🚀 FAISS switched to GPU acceleration")
+        except Exception:
+            logger.info("Using FAISS CPU index (GPU not available or faiss-gpu missing)")
+            self.index = cpu_index
+            
         # Add vectors to index
         self.index.add(embeddings_array)
         

@@ -249,22 +249,22 @@ failure_policies:
 # ⚠️ IMPORTANT: Detection Thresholds
 # These thresholds define the cutoff points for each tier
 thresholds:
-  critical: 0.15  # 70% confidence required for BLOCK (Tier 3)
-  high: 0.10      # 60% confidence for WARN (Tier 3)
-  medium: 0.08    # 50% confidence for WARN (Tier 3)
-  low: 0.05       # 40% confidence for LOG (Tier 3)
+  critical: 0.30  # Optimized from 0.40 to 0.30
+  high: 0.25      # Optimized from 0.30 to 0.25
+  medium: 0.15
+  low: 0.10
   
   # Global Cutoffs
-  tier1_cutoff: 0.80      # Above this, Tier 1 is final
-  tier2_cutoff: 0.15      # Above this, Tier 2 is used
-  uncertain_default: 0.75 # REDUCED: Allows complex queries to escalate to Tier 2/3
-  # This ensures clean requests stay in Tier 1 (RESTORES 95/4/1 TARGET)
+  tier1_cutoff: 0.85
+  tier2_cutoff: 0.20
+  uncertain_default: 0.82
 
 # Enforcement Messages
 messages:
   block: "⛔ Response blocked: {reason}"
   warn: "⚠️ Warning: {reason}"
   log: "ℹ️ Note: {reason}"
+  rag: "🧐 RAG Verification: {reason}"
 
 # 🛰️ Enterprise Observability (OpenTelemetry)
 observability:
@@ -288,9 +288,15 @@ pii_india:
 
 # Post-LLM groundedness + Tier 3 self-correction (needs user_prompt or retrieval_context)
 output_validation:
-  enabled: false
+  enabled: true
   groundedness_threshold: 0.7
   max_retries: 1
+
+# RAG Rails Configuration
+rag_rails:
+  enabled: true
+  qdrant_grounding: false
+  faithfulness_threshold: 0.60
 
 # Defense-in-depth: multi-provider fusion (keys via env; see providers/external_moderation.py)
 external_moderation:
