@@ -1,12 +1,15 @@
 """Enhanced FastAPI application with database integration."""
 
-from contextlib import asynccontextmanager
-from typing import Dict, Any
+import logging
+import os
 import uuid
+from contextlib import asynccontextmanager
+from typing import Any, Dict
 
-from fastapi import FastAPI, HTTPException, Depends, status
+from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from api.models import (
@@ -24,38 +27,50 @@ from api.routes import detection as detection_routes
 from api.routes import governance as governance_routes
 from api.routes import monitoring as monitoring_routes
 from enforcement.control_tower_v3 import ControlTowerV3
-from persistence.database import get_db, init_db, SessionLocal
+from persistence.database import SessionLocal, get_db
 from persistence.user_repository import UserRepository
 from api.auth.jwt_handler import get_password_hash
 from persistence.repository import DetectionRepository, MetricsRepository
+
+logger = logging.getLogger(__name__)
+
+
+def _is_production() -> bool:
+    env = (os.getenv("ENV") or os.getenv("ENVIRONMENT") or "").lower()
+    return env == "production"
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifecycle management for FastAPI app."""
-    # Auto-seed Admin in Cloud SQL
-    try:
-        db = SessionLocal()
-        user_repo = UserRepository(db)
-        if not user_repo.get_by_username("admin"):
-            hashed_pw = get_password_hash("admin123")
-            user_repo.create({
-                "username": "admin",
-                "email": "admin@sovereign-ai.com",
-                "hashed_password": hashed_pw,
-                "role": "admin",
-                "rate_limit_tier": "enterprise",
-                "disabled": False
-            })
-            print("✅ Cloud Admin seeded successfully")
-        db.close()
-    except Exception as e:
-        print(f"⚠️ Seeding warning: {e}")
-    
+    # Optional default admin (disabled when SEED_DEFAULT_USERS=false; see README)
+    if os.getenv("SEED_DEFAULT_USERS", "true").lower() == "true":
+        try:
+            db = SessionLocal()
+            user_repo = UserRepository(db)
+            if not user_repo.get_by_username("admin"):
+                hashed_pw = get_password_hash("admin123")
+                user_repo.create(
+                    {
+                        "username": "admin",
+                        "email": "admin@sovereign-ai.com",
+                        "hashed_password": hashed_pw,
+                        "role": "admin",
+                        "rate_limit_tier": "enterprise",
+                        "disabled": False,
+                    }
+                )
+                logger.warning(
+                    "Default admin user created (username=admin). "
+                    "Change the password and set SEED_DEFAULT_USERS=false in production."
+                )
+            db.close()
+        except Exception as e:
+            logger.warning("User seeding skipped or failed: %s", e)
+
     yield
-    
-    # Shutdown
-    print("🛑 Shutting down LLM Observability API...")
+
+    logger.info("Shutting down LLM Observability API...")
 
 
 app = FastAPI(
@@ -65,10 +80,21 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Add CORS middleware
+# CORS: explicit origins only (wildcard + credentials is invalid in browsers)
+CORS_ORIGINS_RAW = os.getenv("CORS_ORIGINS", "")
+if CORS_ORIGINS_RAW.strip():
+    _cors_origins = [o.strip() for o in CORS_ORIGINS_RAW.split(",") if o.strip()]
+else:
+    _cors_origins = [
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "http://localhost:8000",
+        "http://localhost:8501",  # Streamlit dashboards
+    ]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configure for production
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -108,7 +134,7 @@ async def health_check(
     
     # Test database connection
     try:
-        db.execute("SELECT 1")
+        db.execute(text("SELECT 1"))
         db_healthy = True
     except Exception:
         db_healthy = False
@@ -206,9 +232,15 @@ async def detect(
         )
     
     except Exception as e:
+        logger.exception("Detection failed")
+        detail = (
+            "Detection failed"
+            if _is_production()
+            else f"Detection failed: {str(e)}"
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Detection failed: {str(e)}",
+            detail=detail,
         )
 
 
@@ -309,11 +341,12 @@ async def get_recent_logs(
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request, exc):
-    """Global exception handler."""
+    """Global exception handler (no sensitive detail in production)."""
+    logger.exception("Unhandled exception: %s", exc)
+    body: Dict[str, Any] = {"error": "Internal server error"}
+    if not _is_production():
+        body["detail"] = str(exc)
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        content={
-            "error": "Internal server error",
-            "detail": str(exc),
-        },
+        content=body,
     )

@@ -3,6 +3,7 @@
 import uuid
 import asyncio
 import re
+from datetime import datetime, timezone
 from typing import Optional
 from collections import Counter
 from fastapi import APIRouter, Depends, HTTPException, status, Request
@@ -343,7 +344,7 @@ async def submit_feedback(
         feedback_file = "data/active_learning_feedback.jsonl"
         with open(feedback_file, "a", encoding="utf-8") as f:
             f.write(json.dumps({
-                "ts": str(uuid.uuid4()), 
+                "ts": datetime.now(timezone.utc).isoformat(),
                 "user": current_user.username,
                 "request_id": request.request_id,
                 "text": request.text,

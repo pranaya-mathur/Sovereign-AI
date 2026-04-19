@@ -6,10 +6,13 @@ Routes requests to appropriate detection tier based on confidence:
 - Tier 3: Low/uncertain confidence LLM reasoning (<15% or gray zone)
 """
 
+import logging
 from dataclasses import dataclass
 from typing import Dict, Any, Tuple, Optional, List
 
 from providers.external_moderation import fuse_external_with_tier1
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass

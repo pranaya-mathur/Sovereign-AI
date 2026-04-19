@@ -1,9 +1,14 @@
 """Rate limiting middleware."""
 
+import logging
+import os
 from datetime import datetime, timedelta
 from typing import Dict
+
+import redis
 from sqlalchemy.orm import Session
 
+logger = logging.getLogger(__name__)
 
 # In-memory rate limit store (replace with Redis in production)
 rate_limit_store: Dict[str, Dict] = {}
@@ -20,9 +25,6 @@ def get_rate_limit(tier: str) -> int:
     """Get rate limit for tier."""
     return RATE_LIMITS.get(tier, 100)
 
-import redis
-import os
-import json
 
 # Redis connection for production
 redis_url = os.getenv("REDIS_URL")
@@ -30,7 +32,7 @@ redis_client = None
 if redis_url:
     try:
         redis_client = redis.from_url(redis_url)
-        logger.info(f"Connected to Redis for rate limiting at {redis_url}")
+        logger.info("Connected to Redis for rate limiting")
     except Exception as e:
         logger.warning(f"Redis connection failed: {e}")
 

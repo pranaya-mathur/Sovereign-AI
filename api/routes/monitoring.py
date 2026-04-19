@@ -4,6 +4,7 @@ import os
 from collections import Counter
 
 from fastapi import APIRouter, Depends
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from api.dependencies import get_control_tower
@@ -26,7 +27,7 @@ async def health_check(
     
     # Test database connection
     try:
-        db.execute("SELECT 1")
+        db.execute(text("SELECT 1"))
         db_healthy = True
     except Exception:
         db_healthy = False

@@ -178,13 +178,19 @@ async def detect_batch(
     }
 
 
+def _is_production() -> bool:
+    env = (os.getenv("ENV") or os.getenv("ENVIRONMENT") or "").lower()
+    return env == "production"
+
+
 @app.exception_handler(Exception)
 async def global_exception_handler(request, exc):
-    """Global exception handler."""
+    """Global exception handler (no sensitive detail in production)."""
+    logger.exception("Unhandled exception: %s", exc)
+    content: Dict[str, Any] = {"error": "Internal server error"}
+    if not _is_production():
+        content["detail"] = str(exc)
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        content={
-            "error": "Internal server error",
-            "detail": str(exc),
-        },
+        content=content,
     )
