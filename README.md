@@ -79,12 +79,12 @@ API docs: `http://localhost:8080/docs`
 - 🏎️ **Dynamic Hardware Binding** - Explicitly targets `cuda` or Apple Silicon `mps` ensuring minimum latency.
 - 🎯 **Domain Fine-Tuning** - Standalone training script to align embeddings with esoteric enterprise terminologies.
 
-### Open vs Pro Tier
+### Source-Available vs Pro Tier
 
-While the engine is fully open-source, we optionally provide a fully managed enterprise solution for teams that require SLA guarantees.
+While the source code is provided for reference only (All Rights Reserved), we optionally provide a fully managed enterprise solution for teams that require SLA guarantees.
 
-| Feature | Open Source | Pro (Managed) |
-|---------|------------|---------------|
+| Feature | Source-Available | Pro (Managed) |
+|---------|-----------------|---------------|
 | 🛡️ 3-Tier Edge Detection | ✅ | ✅ |
 | 🚀 Custom Embedding Training | ✅ (Local script) | ✅ (1-Click UI) |
 | ⚙️ Rule Hot-Swapping | ✅ (YAML) | ✅ (Web Dashboard) |
@@ -92,7 +92,7 @@ While the engine is fully open-source, we optionally provide a fully managed ent
 | 🔐 SSO & Role-Based Access | ❌ | ✅ |
 | 📞 99.9% Uptime SLA & Support| ❌ | ✅ |
 
-For Pro tier inquiries, please open a discussion or reach out to the maintainers.
+For Pro tier inquiries or licensing requests, please contact the maintainer directly.
 
 ## Python Usage
 
