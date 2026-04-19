@@ -12,9 +12,12 @@
 
 [![Python 3.11](https://img.shields.io/badge/python-3.11-blue.svg)](https://www.python.org/downloads/)
 [![Tests](https://img.shields.io/badge/tests-74%2F75%20passing-brightgreen.svg)](tests/results/test_results_2026-02-16.txt)
+[![Docker](https://img.shields.io/badge/docker-ready-blue.svg)](docker-compose.yml)
+[![License: Proprietary](https://img.shields.io/badge/License-Proprietary-red.svg)](LICENSE)
+[![Medium](https://img.shields.io/badge/Medium-Article-black.svg)](https://medium.com/@pranaya-mathur)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
-Production-ready safety layer for LLM deployments. Detects hallucinations, prompt injections, and policy violations using intelligent 3-tier detection.
+Production-ready safety layer for LLM deployments. Based on the framework described in **["Building a Sovereign AI Control Tower: Designing Deterministic Guardrails for LLMs"](https://medium.com/@pranaya-mathur)**. Detects hallucinations, prompt injections, and policy violations using intelligent 3-tier detection.
 
 ```
 🚀 Tier 1 (Regex):      95% requests | <1ms     | Fast pattern matching
@@ -59,6 +62,15 @@ curl -X POST http://localhost:8080/detect \
 
 API docs: `http://localhost:8080/docs`
 
+## 🚀 Try It (Live Demo)
+
+A public evaluation space is available for testing the detection logic on synthetic data:
+
+- **Interactive Dashboard**: [sovereign-ai-demo.streamlit.app](https://sovereign-ai-demo.streamlit.app)
+- **API Playground**: [demo.sovereign-ai.com/docs](https://demo.sovereign-ai.com/docs)
+
+*(Note: Public demo uses shared Tier 2/3 credits and may be rate-limited)*
+
 ## What It Detects
 
 - ✅ **Prompt Injection** - System manipulation, jailbreaks
@@ -74,7 +86,8 @@ API docs: `http://localhost:8080/docs`
 - 🛰️ **OpenTelemetry Observability** - Distributed tracing and metrics natively support Datadog, Grafana, and Honeycomb via OTLP.
 - 🛡️ **Cross-Platform Security** - ReDoS protection via thread-based timeouts ensures Windows/Mac/Linux compatibility.
 - ⚙️ **Hot-Swappable Configs** - Policy-driven thresholds and logic management in `policy.yaml`.
-- 🧠 **Dynamic LLMs** - Plug-and-play LLM providers for Tier 3, defaulting to `qwen3.5:9b` (Ollama) and `llama-3.3-70b` (Groq).
+- 🧠 **Dynamic LLMs** - Plug-and-play LLM providers for Tier 3, defaulting to `qwen3.5:9b` (Ollama) and `llama-3.3-70b-versatile` (Groq).
+- 🔄 **Tier 3 Fallbacks** - Intelligent fallback logic ensures that if high-reasoning providers (Groq/Ollama) are offline, the system degrades gracefully to local semantic validation or conservative blocking to maintain security.
 - 🚀 **CI/CD Pipeline** - Built-in GCP `cloudbuild.yaml` for automated testing, artifact building, and zero-downtime GKE deployment.
 - 🏎️ **Dynamic Hardware Binding** - Explicitly targets `cuda` or Apple Silicon `mps` ensuring minimum latency.
 - 🎯 **Domain Fine-Tuning** - Standalone training script to align embeddings with esoteric enterprise terminologies.
