@@ -65,6 +65,8 @@ class DecisionCache:
         decision: str,
         confidence: float,
         reasoning: str,
+        findings: Optional[list] = None,
+        critique: Optional[str] = None,
     ) -> None:
         """Store LLM decision in cache."""
         cache_key = self._compute_hash(prompt, context)
@@ -73,6 +75,8 @@ class DecisionCache:
             "decision": decision,
             "confidence": confidence,
             "reasoning": reasoning,
+            "findings": findings or [],
+            "critique": critique or "",
             "timestamp": datetime.now().isoformat(),
             "cache_hit": False,
         }
