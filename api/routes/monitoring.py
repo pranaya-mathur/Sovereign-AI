@@ -1,5 +1,8 @@
 """Monitoring routes for system health and metrics."""
 
+import os
+from collections import Counter
+
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
@@ -98,14 +101,39 @@ async def get_status():
     }
 
 
+@router.get("/moderation_status")
+async def moderation_status(
+    control_tower: ControlTowerV3 = Depends(get_control_tower),
+):
+    """Which external moderation backends appear configured (keys present, not values)."""
+    _ = control_tower
+    policy = PolicyLoader()
+    ext = policy.get_external_moderation_config()
+    return {
+        "policy_providers": ext.get("providers", []),
+        "env_openai": bool(os.getenv("OPENAI_API_KEY")),
+        "env_azure": bool(os.getenv("AZURE_CONTENT_SAFETY_ENDPOINT") and os.getenv("AZURE_CONTENT_SAFETY_KEY")),
+        "env_anthropic_lite": bool(os.getenv("ANTHROPIC_API_KEY"))
+        and os.getenv("ANTHROPIC_MODERATION_LITE", "").lower() in ("1", "true", "yes"),
+        "external_moderation_enabled": bool(ext.get("enabled")),
+    }
+
+
 @router.get("/policy_effectiveness")
 async def policy_effectiveness(
     control_tower: ControlTowerV3 = Depends(get_control_tower),
 ):
-    """Routing mix as a lightweight policy routing heatmap (tiers vs volume)."""
+    """Routing mix plus recent compliance action/tier mix for dashboard heatmaps."""
     stats = control_tower.get_tier_stats()
     dist = stats.get("distribution", {})
     total = max(1, int(stats.get("total", 0)))
+    policy = PolicyLoader()
+    path = policy.get_compliance_audit_config().get("jsonl_path", "data/compliance_audit.jsonl")
+    store = ComplianceJSONLLogger(path)
+    rows = store.read_last(800)
+    action_c = Counter((r.get("action") or "unknown") for r in rows)
+    tier_c = Counter(str(r.get("tier_used")) for r in rows if r.get("tier_used") is not None)
+    fc_c = Counter((r.get("failure_class") or "none") for r in rows)
     return {
         "total_requests": total,
         "heatmap_rows": [
@@ -113,6 +141,10 @@ async def policy_effectiveness(
             {"tier": "tier2_semantic", "count": stats.get("tier2_count", 0), "pct": dist.get("tier2_pct", 0)},
             {"tier": "tier3_llm", "count": stats.get("tier3_count", 0), "pct": dist.get("tier3_pct", 0)},
         ],
+        "recent_compliance_window": len(rows),
+        "recent_action_mix": dict(action_c),
+        "recent_tier_mix": dict(tier_c),
+        "recent_failure_class_mix": dict(fc_c),
         "health": stats.get("health"),
         "drift_note": "Configure embedding baselines in policy for full drift alerts.",
     }
@@ -136,5 +168,7 @@ async def drift_signals(
         "tier3_fraction_recent_compliance_window": round(t3_frac, 4),
         "tier3_routing_pct_live": stats.get("distribution", {}).get("tier3_pct"),
         "drift_alert": t3_frac > 0.12 and len(tiers) >= 30,
+        "drift_threshold_tier3_fraction": 0.12,
+        "min_samples_for_alert": 30,
         "note": "Heuristic only; pair with embedding baselines for production drift.",
     }

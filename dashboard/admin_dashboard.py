@@ -423,7 +423,76 @@ elif page == "🔍 Detection Monitor":
 
 # Page: Policy & Governance
 elif page == "📈 Policy & Governance":
-    st.header("Policy routing and compliance")
+    st.header("Policy routing, PII, drift, and defense-in-depth (Pro-style console)")
+
+    col_def, col_pii = st.columns(2)
+
+    with col_def:
+        st.subheader("External moderation fusion (env)")
+        try:
+            ms = requests.get(
+                f"{API_BASE_URL}/api/monitoring/moderation_status",
+                headers=get_headers(),
+            )
+            if ms.status_code == 200:
+                st.json(ms.json())
+            else:
+                st.warning(f"moderation_status: {ms.status_code}")
+        except Exception as e:
+            st.error(str(e))
+
+        st.subheader("Drift alert (Tier 3 share in compliance window)")
+        try:
+            drift = requests.get(
+                f"{API_BASE_URL}/api/monitoring/drift_signals?window=200",
+                headers=get_headers(),
+            )
+            if drift.status_code == 200:
+                dj = drift.json()
+                if dj.get("drift_alert"):
+                    st.error(
+                        f"DRIFT ALERT: Tier-3 fraction in recent window is {dj.get('tier3_fraction_recent_compliance_window')} "
+                        f"(threshold {dj.get('drift_threshold_tier3_fraction')}, min samples {dj.get('min_samples_for_alert')})."
+                    )
+                else:
+                    st.success("No drift alert on current window (heuristic).")
+                st.json(dj)
+            else:
+                st.warning(f"drift_signals: {drift.status_code}")
+        except Exception as e:
+            st.error(str(e))
+
+    with col_pii:
+        st.subheader("PII entity heatmap (demo corpus)")
+        try:
+            ph = requests.get(
+                f"{API_BASE_URL}/api/governance/pii-heatmap-demo",
+                headers=get_headers(),
+            )
+            if ph.status_code == 200:
+                pj = ph.json()
+                ec = pj.get("entity_counts") or {}
+                if ec:
+                    df_pii = pd.DataFrame(
+                        [{"entity": k, "hits": v} for k, v in sorted(ec.items(), key=lambda x: -x[1])]
+                    )
+                    fig_h = px.bar(
+                        df_pii,
+                        x="entity",
+                        y="hits",
+                        color="hits",
+                        color_continuous_scale="Viridis",
+                        title=f"PII-like hits across {pj.get('samples_scanned', 0)} synthetic lines",
+                    )
+                    st.plotly_chart(fig_h, use_container_width=True)
+                else:
+                    st.info("No PII-like entities in demo corpus.")
+            else:
+                st.warning(f"pii-heatmap-demo: {ph.status_code}")
+        except Exception as e:
+            st.error(str(e))
+
+    st.subheader("Policy effectiveness (live routing + recent compliance mix)")
     try:
         pe = requests.get(
             f"{API_BASE_URL}/api/monitoring/policy_effectiveness",
@@ -431,31 +500,58 @@ elif page == "📈 Policy & Governance":
         )
         if pe.status_code == 200:
             data = pe.json()
-            st.subheader("Tier routing mix")
             rows = data.get("heatmap_rows", [])
             if rows:
                 df = pd.DataFrame(rows)
                 st.dataframe(df, use_container_width=True)
-                fig = px.bar(df, x="tier", y="pct", title="Routing % by tier")
+                fig = px.bar(df, x="tier", y="pct", title="Live routing % by tier")
                 st.plotly_chart(fig, use_container_width=True)
+            am = data.get("recent_action_mix") or {}
+            if am:
+                df_a = pd.DataFrame([{"action": k, "count": v} for k, v in am.items()])
+                fig_a = px.bar(
+                    df_a,
+                    x="action",
+                    y="count",
+                    color="count",
+                    color_continuous_scale="Blues",
+                    title=f"Recent actions (last {data.get('recent_compliance_window', 0)} compliance rows)",
+                )
+                st.plotly_chart(fig_a, use_container_width=True)
+            fm = data.get("recent_failure_class_mix") or {}
+            if fm:
+                df_f = pd.DataFrame([{"failure_class": k, "count": v} for k, v in fm.items()])
+                fig_f = px.bar(df_f, x="failure_class", y="count", title="Failure class mix (recent window)")
+                st.plotly_chart(fig_f, use_container_width=True)
             st.caption(data.get("drift_note", ""))
         else:
             st.error(f"policy_effectiveness failed: {pe.status_code}")
     except Exception as e:
         st.error(str(e))
 
-    st.subheader("Drift-style signals (compliance window)")
-    try:
-        drift = requests.get(
-            f"{API_BASE_URL}/api/monitoring/drift_signals?window=200",
-            headers=get_headers(),
-        )
-        if drift.status_code == 200:
-            st.json(drift.json())
-        else:
-            st.warning(f"drift_signals: {drift.status_code}")
-    except Exception as e:
-        st.error(str(e))
+    st.subheader("Agentic / tool-use guard simulator")
+    ag_text = st.text_area("Agent or user text", height=100, key="ag_text")
+    ag_tool = st.text_input("Tool name (optional)", "", key="ag_tool")
+    ag_allowed = st.text_input("Allowed tools (comma-separated, optional)", "read_file,list_dir", key="ag_allowed")
+    if st.button("Run agentic-check"):
+        try:
+            allowed = [x.strip() for x in ag_allowed.split(",") if x.strip()] if ag_allowed.strip() else []
+            payload = {"text": ag_text or " "}
+            if ag_tool.strip():
+                payload["tool_name"] = ag_tool.strip()
+            if allowed:
+                payload["allowed_tools"] = allowed
+            ar = requests.post(
+                f"{API_BASE_URL}/api/governance/agentic-check",
+                json=payload,
+                headers={**get_headers(), "Content-Type": "application/json"},
+            )
+            if ar.status_code == 200:
+                st.json(ar.json())
+            else:
+                st.error(ar.text[:500])
+        except Exception as e:
+            st.error(str(e))
 
     st.subheader("Prometheus scrape (/metrics)")
     st.caption("Same host as API; use Grafana or Prometheus server to scrape this text endpoint.")

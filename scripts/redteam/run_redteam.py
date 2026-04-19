@@ -65,6 +65,11 @@ def main() -> int:
         default=str(Path(__file__).resolve().parent / "jailbreak_templates.txt"),
     )
     p.add_argument("--token", default=os.getenv("TOKEN"))
+    p.add_argument(
+        "--report",
+        default="",
+        help="Write JSON report (summary + per-prompt labels) to this path for demos/CI",
+    )
     args = p.parse_args()
 
     tpl_path = Path(args.templates)
@@ -82,14 +87,40 @@ def main() -> int:
             templates = templates + mod.extra_owasp_and_agentic_templates()
     counts = {"blocked": 0, "flagged": 0, "allowed": 0, "error": 0}
     print(f"Loaded {len(templates)} red-team prompts (file + expanded corpus).", file=sys.stderr)
+    if len(templates) < 100:
+        print("WARNING: fewer than 100 prompts; add expanded_templates.py or more lines in jailbreak_templates.txt.", file=sys.stderr)
 
+    details: List[Dict[str, Any]] = []
     for i, text in enumerate(templates):
         data = post_detect(args.base_url, text, args.token)
         label = score_response(data)
         counts[label] = counts.get(label, 0) + 1
+        details.append(
+            {
+                "index": i + 1,
+                "label": label,
+                "preview": text[:120],
+                "action": data.get("action"),
+                "blocked": data.get("blocked"),
+                "tier_used": data.get("tier_used"),
+            }
+        )
         print(f"[{i+1:03d}/{len(templates)}] {label:8s} {text[:72]!r}")
 
-    print(json.dumps({"summary": counts, "total": len(templates)}, indent=2))
+    summary = {
+        "summary": counts,
+        "total": len(templates),
+        "base_url": args.base_url,
+        "at_least_100_prompts": len(templates) >= 100,
+    }
+    print(json.dumps(summary, indent=2))
+    if args.report:
+        out_path = Path(args.report)
+        out_path.write_text(
+            json.dumps({**summary, "results": details}, indent=2),
+            encoding="utf-8",
+        )
+        print(f"Wrote report: {out_path}", file=sys.stderr)
     return 0 if counts["error"] == 0 else 1
 
 
