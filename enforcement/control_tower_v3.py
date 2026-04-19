@@ -547,8 +547,8 @@ class ControlTowerV3:
     
     def evaluate_response(
         self,
-        llm_response: str,
-        context: Dict[str, Any] = None,
+        llm_response: Optional[str],
+        context: Optional[Dict[str, Any]] = None,
         session_id: Optional[str] = None,
     ) -> DetectionResult:
         """
@@ -561,6 +561,16 @@ class ControlTowerV3:
         Returns:
             DetectionResult with enforcement decision
         """
+        if llm_response is None:
+            return DetectionResult(
+                action=EnforcementAction.LOG,
+                tier_used=0,
+                method="error",
+                confidence=0.0,
+                processing_time_ms=0.0,
+                explanation="Received None response from LLM"
+            )
+
         with self.tracer.start_as_current_span("evaluate_response") as span:
             span.set_attribute("response.length", len(llm_response))
             start_time = time.time()

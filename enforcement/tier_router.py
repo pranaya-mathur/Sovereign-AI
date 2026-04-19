@@ -78,7 +78,7 @@ class TierRouter:
         method = tier1_result.get("method", "unknown")
         
         # Tier 1: High confidence match (>= cutoff) from TRUSTED regex methods
-        is_trusted_method = method in ["regex_strong", "regex_anti", "regex_pathological", "regex_length_check"]
+        is_trusted_method = method in ["regex_strong", "regex_anti", "regex_pathological", "regex_length_check", "regex_uncertain"]
         
         if confidence >= t1_cutoff:
             if is_trusted_method:

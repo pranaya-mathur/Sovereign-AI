@@ -1,4 +1,4 @@
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from signals.registry import ALL_SIGNALS
 
 
@@ -6,7 +6,7 @@ def run_signals(
     *,
     prompt: str,
     response: str,
-    metadata: Dict[str, Any] | None = None
+    metadata: Optional[Dict[str, Any]] = None
 ) -> List[dict]:
     metadata = metadata or {}
     results = []

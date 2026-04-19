@@ -17,7 +17,7 @@ async def test_safe_agent_integration():
         agent = SafeAgent(
             agent_name="test_agent",
             interceptor=interceptor,
-            model="phi3:latest"
+            model="llama3:8b"
         )
         
         result = await agent.act(
@@ -47,7 +47,7 @@ async def test_control_tower_pipeline():
         # Step 1: Get LLM response
         interceptor = OllamaInterceptor()
         llm_response = await interceptor.call(
-            model="phi3",
+            model="llama3:8b",
             prompt="Explain Python in one sentence"
         )
         
