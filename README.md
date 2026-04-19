@@ -1,8 +1,17 @@
+> [!CAUTION]
+> **⚠️ COPYRIGHT NOTICE — ALL RIGHTS RESERVED**
+> 
+> © 2026 Pranay Mathur. This project is **NOT open source**.
+> You are strictly prohibited from copying, using, modifying, or distributing any part of this code without explicit prior written permission.
+> 
+> **For permissions and licensing inquiries, contact:** [pranaya.mathur@yahoo.com](mailto:pranaya.mathur@yahoo.com)
+
+---
+
 # Sovereign AI - LLM Observability Platform
 
 [![Python 3.11](https://img.shields.io/badge/python-3.11-blue.svg)](https://www.python.org/downloads/)
 [![Tests](https://img.shields.io/badge/tests-74%2F75%20passing-brightgreen.svg)](tests/results/test_results_2026-02-16.txt)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
 Production-ready safety layer for LLM deployments. Detects hallucinations, prompt injections, and policy violations using intelligent 3-tier detection.
@@ -257,7 +266,7 @@ PRs welcome! See [CONTRIBUTING.md](CONTRIBUTING.md)
 
 ## License
 
-MIT License - See [LICENSE](LICENSE)
+All Rights Reserved. See [LICENSE](LICENSE) for details. This project is NOT open source.
 
 ## Citation
 
