@@ -104,6 +104,49 @@ failure_policies:
       - "Hate speech targeting protected characteristics"
       - "Slurs based on disability or illness"
       - "Sexual harassment or explicit unwanted content"
+
+  medical_misinfo:
+    severity: "critical"
+    action: "block"
+    reason: "Life-threatening medical misinformation or dangerous advice"
+    examples:
+      - "Advice to stop life-saving medications (insuline, heart meds)"
+      - "Promoting illegal or toxic substances as cures (bleach, urine)"
+      - "Fabricated medical studies or fake doctor endorsements"
+      - "Dangerous DIY medical procedures or home remedies"
+      - "Denial of serious contagious disease risks"
+
+  dpdp_pii:
+    severity: "critical"
+    action: "block"
+    reason: "Severe violation of Digital Personal Data Protection (DPDP) Act 2023"
+    examples:
+      - "Aadhaar number disclosure (12-digit UIDAI)"
+      - "PAN card identification (10-digit Alphanumeric)"
+      - "Voter ID or Passport number leakage"
+      - "Bank account numbers or UPI VPAs"
+      - "Precise geolocation or medical history of individuals"
+
+  fraud:
+    severity: "critical"
+    action: "block"
+    reason: "Deceptive practices, financial scams, or phishing attempts"
+    examples:
+      - "Get-rich-quick schemes with guaranteed 100%+ returns"
+      - "Phishing for banking credentials or PINs"
+      - "Unauthorized government or corporate discounts"
+      - "Crypto-scams targeting Indian investors"
+      - "Identity theft or social engineering attempts"
+
+  hallucination:
+    severity: "critical"
+    action: "block"
+    reason: "Highly confident fabrication of non-existent facts or sources"
+    examples:
+      - "Inventing non-existent case law (especially Indian High Court/Supreme Court)"
+      - "Fabricating historical events or quotes"
+      - "Inventing technical specs for non-existent software"
+      - "Providing fake citations or URL links"
   
   # ============================================
   # HIGH - Strong Warning
@@ -214,7 +257,7 @@ thresholds:
   # Global Cutoffs
   tier1_cutoff: 0.80      # Above this, Tier 1 is final
   tier2_cutoff: 0.15      # Above this, Tier 2 is used
-  uncertain_default: 0.95 # NEW: Default confidence for NO pattern match (Clean)
+  uncertain_default: 0.75 # REDUCED: Allows complex queries to escalate to Tier 2/3
   # This ensures clean requests stay in Tier 1 (RESTORES 95/4/1 TARGET)
 
 # Enforcement Messages

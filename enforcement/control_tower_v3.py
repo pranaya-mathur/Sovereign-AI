@@ -41,6 +41,7 @@ class DetectionResult:
     processing_time_ms: float
     failure_class: Optional[FailureClass] = None
     severity: Optional[SeverityLevel] = None
+    findings: list[Dict[str, Any]] = field(default_factory=list) # Multi-label support
     explanation: str = ""
     metadata: Dict[str, Any] = field(default_factory=dict)
 
@@ -185,6 +186,10 @@ class ControlTowerV3:
             row["output_self_corrected"] = True
         if not cfg.get("store_text_hashes_only", True):
             row["response_preview"] = (llm_response or "")[:500]
+        
+        if result.findings:
+            row["findings"] = result.findings
+            
         self._compliance_logger.append(row)
 
     def _enrich_result(
@@ -522,18 +527,66 @@ class ControlTowerV3:
             text = text[:2000]
         
         try:
-            # Use LLM agent for deep analysis
+            # Use LLM agent for deep analysis (includes CoT and Critique)
             agent_result = self.llm_agent.analyze(text, context)
             
-            # Convert decision to boolean
+            # Extract structured data
+            findings = agent_result.get("findings", [])
             should_block = agent_result.get("decision") == "BLOCK"
             
+            # ✅ HYBRID POST-CLASSIFICATION REFINEMENT LAYER
+            # Deterministic check for PII (DPDP context)
+            from rules.pii_india import detect_india_pii
+            pii_matches = detect_india_pii(text)
+            if pii_matches:
+                high_conf_pii = [m for m in pii_matches if m.score > 0.8]
+                if high_conf_pii:
+                    findings.append({
+                        "category": "dpdp_pii", 
+                        "confidence": max(m.score for m in high_conf_pii),
+                        "severity": "critical",
+                        "method": "hybrid_regex_override"
+                    })
+                    should_block = True
+            
+            # Deterministic check for Medical keywords (Medical misinformation context)
+            medical_keywords = [r"aspirin", r"insulin", r"chemotherapy", r"neem oil", r"bleach", r"turpentine"]
+            for kw in medical_keywords:
+                if re.search(kw, text, re.IGNORECASE):
+                    findings.append({
+                        "category": "medical_misinfo",
+                        "confidence": 0.85,
+                        "severity": "high",
+                        "method": "hybrid_keywords"
+                    })
+                    # We don't necessarily block just on keywords, but it adds weight
+
+            # Map categories to FailureClass
+            class_map = {
+                "medical_misinfo": FailureClass.MEDICAL_MISINFO,
+                "dpdp_pii": FailureClass.DPDP_PII,
+                "fraud": FailureClass.FRAUD,
+                "hallucination": FailureClass.HALLUCINATION,
+                "overconfidence": FailureClass.OVERCONFIDENCE,
+                "prompt_injection": FailureClass.PROMPT_INJECTION,
+                "toxicity": FailureClass.TOXICITY,
+                "bias": FailureClass.BIAS
+            }
+
+            # Filter to unique primary failure class
+            primary_f_class = None
+            if findings:
+                primary_cat = findings[0].get("category")
+                primary_f_class = class_map.get(primary_cat, FailureClass.PROMPT_INJECTION)
+
             return {
                 "confidence": agent_result.get("confidence", 0.7),
-                "failure_class": FailureClass.PROMPT_INJECTION if should_block else None,
-                "method": "llm_agent",
+                "failure_class": primary_f_class if should_block else None,
+                "method": "llm_agent_v3",
                 "should_allow": not should_block,
-                "explanation": agent_result.get("reasoning", "LLM agent analysis completed")
+                "explanation": agent_result.get("reasoning", "LLM agent analysis completed"),
+                "findings": findings,
+                "critique": agent_result.get("critique", "")
             }
         except Exception as e:
             logger.warning(f"LLM agent failed: {e}")
@@ -751,8 +804,11 @@ class ControlTowerV3:
                     processing_time_ms=processing_time,
                     failure_class=f_class_final,
                     severity=severity,
+                    findings=final_result.get("findings", []),
                     explanation=final_result.get("explanation", "Analysis completed")
                 )
+                if final_result.get("critique"):
+                    result.metadata["tier3_critique"] = final_result["critique"]
                 self._enrich_result(llm_response, result, context, span, external_snapshot)
                 self._emit_compliance(llm_response, result, context, session_id)
                 

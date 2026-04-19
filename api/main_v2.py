@@ -24,20 +24,33 @@ from api.routes import detection as detection_routes
 from api.routes import governance as governance_routes
 from api.routes import monitoring as monitoring_routes
 from enforcement.control_tower_v3 import ControlTowerV3
-from persistence.database import get_db, init_db
+from persistence.database import get_db, init_db, SessionLocal
+from persistence.user_repository import UserRepository
+from api.auth.jwt_handler import get_password_hash
 from persistence.repository import DetectionRepository, MetricsRepository
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifecycle management for FastAPI app."""
-    # Startup
-    print("🚀 Starting LLM Observability API...")
+    # Auto-seed Admin in Cloud SQL
     try:
-        init_db()
-        print("✅ Database initialized")
+        db = SessionLocal()
+        user_repo = UserRepository(db)
+        if not user_repo.get_by_username("admin"):
+            hashed_pw = get_password_hash("admin123")
+            user_repo.create({
+                "username": "admin",
+                "email": "admin@sovereign-ai.com",
+                "hashed_password": hashed_pw,
+                "role": "admin",
+                "rate_limit_tier": "enterprise",
+                "disabled": False
+            })
+            print("✅ Cloud Admin seeded successfully")
+        db.close()
     except Exception as e:
-        print(f"⚠️ Database initialization warning: {e}")
+        print(f"⚠️ Seeding warning: {e}")
     
     yield
     
@@ -189,6 +202,7 @@ async def detect(
             severity=result.severity.value if result.severity else None,
             explanation=result.explanation,
             blocked=result.action.value == "block",
+            findings=result.findings,
         )
     
     except Exception as e:

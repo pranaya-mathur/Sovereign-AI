@@ -13,9 +13,13 @@ class FailureClass(str, Enum):
     # Critical failures - require immediate blocking
     FABRICATED_CONCEPT = "fabricated_concept"
     FABRICATED_FACT = "fabricated_fact"
+    HALLUCINATION = "hallucination"
     DANGEROUS_CONTENT = "dangerous_content"
     PROMPT_INJECTION = "prompt_injection"
     TOXICITY = "toxicity"
+    MEDICAL_MISINFO = "medical_misinfo"
+    DPDP_PII = "dpdp_pii"
+    FRAUD = "fraud"
     
     # High severity - strong warnings required
     MISSING_GROUNDING = "missing_grounding"
@@ -41,6 +45,9 @@ class FailureMetadata:
         FailureClass.FABRICATED_FACT: (
             "LLM stated a verifiably false fact with confidence"
         ),
+        FailureClass.HALLUCINATION: (
+            "Response contains fabricated information not present in context or reality"
+        ),
         FailureClass.DANGEROUS_CONTENT: (
             "Response contains harmful, unsafe, or prohibited content"
         ),
@@ -49,6 +56,15 @@ class FailureMetadata:
         ),
         FailureClass.TOXICITY: (
             "Response contains hate speech, slurs, or offensive language"
+        ),
+        FailureClass.MEDICAL_MISINFO: (
+            "Dangerous or life-threatening medical misinformation or advice"
+        ),
+        FailureClass.DPDP_PII: (
+            "Violation of Digital Personal Data Protection (DPDP) Act 2023 - unauthorized PII"
+        ),
+        FailureClass.FRAUD: (
+            "Deceptive practices, scams, or financial manipulation attempts"
         ),
         FailureClass.MISSING_GROUNDING: (
             "Response lacks citations, sources, or grounding in evidence"

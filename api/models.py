@@ -44,6 +44,7 @@ class DetectionResponse(BaseModel):
     severity: Optional[str] = Field(None, description="Severity level")
     explanation: str = Field(..., description="Human-readable explanation")
     blocked: bool = Field(..., description="Whether response was blocked")
+    findings: list[Dict[str, Any]] = Field(default_factory=list, description="Detailed multi-label findings")
     
     class Config:
         json_schema_extra = {
