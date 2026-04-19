@@ -79,20 +79,24 @@ API docs: `http://localhost:8080/docs`
 - 🏎️ **Dynamic Hardware Binding** - Explicitly targets `cuda` or Apple Silicon `mps` ensuring minimum latency.
 - 🎯 **Domain Fine-Tuning** - Standalone training script to align embeddings with esoteric enterprise terminologies.
 
-### Source-Available vs Pro Tier
+### Commercial Licensing (All Rights Reserved)
 
-While the source code is provided for reference only (All Rights Reserved), we optionally provide a fully managed enterprise solution for teams that require SLA guarantees.
+The full source is available for **evaluation only**.  
+Any commercial, production, or derivative use requires **explicit written permission** from Pranay Mathur ([pranaya.mathur@yahoo.com](mailto:pranaya.mathur@yahoo.com)).
 
-| Feature | Source-Available | Pro (Managed) |
-|---------|-----------------|---------------|
-| 🛡️ 3-Tier Edge Detection | ✅ | ✅ |
-| 🚀 Custom Embedding Training | ✅ (Local script) | ✅ (1-Click UI) |
-| ⚙️ Rule Hot-Swapping | ✅ (YAML) | ✅ (Web Dashboard) |
-| 📊 Telemetry | ✅ (OTLP Export) | ✅ (Built-in Analytics Platform) |
-| 🔐 SSO & Role-Based Access | ❌ | ✅ |
-| 📞 99.9% Uptime SLA & Support| ❌ | ✅ |
+| Feature | Evaluation (Source-Available) | Licensed / Pro (Managed) |
+|----------------------------------|----------------------------------------|-------------------------------------------|
+| 3-Tier Detection | ✅ | ✅ |
+| DPDP PII Redaction | ✅ | ✅ (1-click UI + audit) |
+| Post-LLM Output Validation | ✅ | ✅ (Visual correction history) |
+| Compliance JSONL Audit Logs | ✅ | ✅ (SSO + RBAC + export) |
+| **Governance Dashboard APIs** | ✅ (basic endpoints) | ✅ (Full API + polished UI) |
+| Custom Embedding Training | ✅ (local script) | ✅ (1-click UI) |
+| Rule Hot-Swapping | ✅ (YAML) | ✅ (Web Dashboard) |
+| SSO + Role-Based Access | ❌ | ✅ |
+| 99.9 % SLA + Priority Support | ❌ | ✅ |
 
-For Pro tier inquiries or licensing requests, please contact the maintainer directly.
+For licensing and Pro tier inquiries, contact the maintainer at the email above.
 
 ## Python Usage
 
@@ -221,8 +225,11 @@ curl http://localhost:8080/metrics
 # Stats dashboard
 curl http://localhost:8080/metrics/stats
 
-# Admin UI
+# Admin UI (users, detection, governance section)
 streamlit run dashboard/admin_dashboard.py
+
+# Governance console (PII heatmap, policy mix, drift, moderation status)
+streamlit run dashboard/governance_dashboard.py
 ```
 
 ## Test Results
