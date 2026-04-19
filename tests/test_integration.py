@@ -7,11 +7,19 @@ from enforcement.control_tower_v3 import ControlTowerV3  # ✅ FIXED
 from agent.safe_agent import SafeAgent
 
 
+@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_safe_agent_integration():
     """Test SafeAgent with interceptor."""
     print("\n🔗 Testing SafeAgent Integration...")
     
+    # Check if Ollama is running first to avoid 180s hang
+    try:
+        async with httpx.AsyncClient(timeout=1.0) as client:
+            resp = await client.get("http://localhost:11434")
+    except Exception:
+        pytest.skip("Ollama not running on localhost:11434")
+
     try:
         interceptor = OllamaInterceptor()
         agent = SafeAgent(
@@ -29,20 +37,25 @@ async def test_safe_agent_integration():
         assert result["agent"] == "test_agent"
         
         print(f"✅ SafeAgent integration test passed")
-        print(f"   Status: {result['status']}")
-        print(f"   Agent: {result['agent']}")
         
     except Exception as e:
         print(f"⚠️  SafeAgent test skipped: {e}")
-        print(f"   Make sure Ollama is running with phi3 model")
         pytest.skip(f"Ollama not available: {e}")
 
 
+@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_control_tower_pipeline():
     """Test complete Control Tower V3 pipeline."""
     print("\n🏗️  Testing Control Tower V3 Pipeline...")
     
+    # Check if Ollama is running first to avoid 180s hang
+    try:
+        async with httpx.AsyncClient(timeout=1.0) as client:
+            await client.get("http://localhost:11434")
+    except Exception:
+        pytest.skip("Ollama not running on localhost:11434")
+
     try:
         # Step 1: Get LLM response
         interceptor = OllamaInterceptor()
@@ -74,6 +87,7 @@ async def test_control_tower_pipeline():
         pytest.skip(f"Dependencies not available: {e}")
 
 
+@pytest.mark.integration
 def test_detection_tiers():
     """Test all three detection tiers."""
     print("\n🎯 Testing Detection Tiers...")
