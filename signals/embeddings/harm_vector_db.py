@@ -46,18 +46,36 @@ class HarmVectorDB:
             policy_path: Path to policy.yaml file
             model_name: SentenceTransformer model name
         """
-        logger.info(f"Initializing HarmVectorDB with model: {model_name}")
+        from config.policy_loader import PolicyLoader
+        import torch
+        
+        # Load hardware policy
+        policy_loader = PolicyLoader(policy_path)
+        hw_config = policy_loader.get_hardware_config()
+        
+        # Determine optimal device
+        device = hw_config.get("accelerator", "auto")
+        if device == "auto" or device is None:
+            if torch.cuda.is_available():
+                device = "cuda"
+            elif torch.backends.mps.is_available():
+                device = "mps"
+            else:
+                device = "cpu"
+                
+        logger.info(f"Initializing HarmVectorDB with model: {model_name} on device: {device}")
         
         # Load the same model as SemanticDetector for consistency
         try:
             self.model = SentenceTransformer(
                 model_name,
+                device=device,
                 local_files_only=True  # Use cached model
             )
-            logger.info(f"Loaded {model_name} from local cache")
+            logger.info(f"Loaded {model_name} from local cache on {device}")
         except Exception:
-            logger.info(f"Downloading {model_name} for first-time use...")
-            self.model = SentenceTransformer(model_name)
+            logger.info(f"Downloading {model_name} for first-time use on {device}...")
+            self.model = SentenceTransformer(model_name, device=device)
         
         self.model.eval()  # Set to evaluation mode
         

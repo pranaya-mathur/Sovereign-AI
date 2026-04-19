@@ -21,9 +21,18 @@ class ComplianceJSONLLogger:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.Lock()
 
-    def append(self, record: Dict[str, Any]) -> None:
+    def append(self, record: Dict[str, Any], secret_key: Optional[str] = None) -> None:
+        """Append record with optional integrity signature (SOC 2 requirement)."""
         row = dict(record)
         row.setdefault("ts", datetime.now(timezone.utc).isoformat())
+        
+        # Calculate integrity signature if secret provided
+        if secret_key:
+            import hmac
+            msg = json.dumps(row, sort_keys=True)
+            sig = hmac.new(secret_key.encode(), msg.encode(), hashlib.sha256).hexdigest()
+            row["_sig"] = sig
+
         line = json.dumps(row, ensure_ascii=False, default=str) + "\n"
         with self._lock:
             with open(self.path, "a", encoding="utf-8") as f:
