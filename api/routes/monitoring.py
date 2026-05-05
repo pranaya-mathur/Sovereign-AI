@@ -97,7 +97,7 @@ async def get_status():
     """Get system status."""
     return {
         "service": "LLM Observability API",
-        "version": "5.0.0",
+        "version": "4.1.0",
         "status": "operational",
     }
 

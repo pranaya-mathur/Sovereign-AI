@@ -2,11 +2,14 @@
 
 from typing import Any, Optional
 import httpx
+import logging
+
+logger = logging.getLogger(__name__)
 
 class SovereignLlamaGuard:
     """LlamaIndex Post-Processor for content guarding."""
     
-    def __init__(self, endpoint: str = "http://localhost:8000/detect", api_key: Optional[str] = None):
+    def __init__(self, endpoint: str = "http://localhost:8000/api/detect", api_key: Optional[str] = None):
         self.endpoint = endpoint
         self.api_key = api_key
 
@@ -22,7 +25,7 @@ class SovereignLlamaGuard:
                 
                 res = client.post(
                     self.endpoint,
-                    json={"llm_response": text, "context": {}},
+                    json={"text": text, "context": {}},
                     headers=headers
                 )
                 
@@ -33,6 +36,6 @@ class SovereignLlamaGuard:
         except PermissionError:
             raise
         except Exception as e:
-            print(f"Sovereign AI call failed: {e}")
+            logger.warning("Sovereign AI call failed: %s", e)
             
         return response

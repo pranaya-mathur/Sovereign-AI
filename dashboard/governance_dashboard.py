@@ -86,8 +86,8 @@ if not st.session_state.token:
             value=st.session_state.api_url,
             help="Must match your FastAPI server (e.g. http://localhost:8000)",
         )
-        u = st.text_input("Username", value="admin")
-        p = st.text_input("Password", type="password", value="admin123")
+        u = st.text_input("Username")
+        p = st.text_input("Password", type="password")
         if st.button("Login", use_container_width=True):
             if login(u, p):
                 st.success("Signed in.")

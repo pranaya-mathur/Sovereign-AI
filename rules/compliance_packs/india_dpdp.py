@@ -34,8 +34,8 @@ class DPDPChecker:
                 violations.append({
                     "rule": "DPDP_SEC_6_PII_PROTECTION",
                     "severity": "critical",
-                    "detected": m.pattern_name,
-                    "explanation": f"Unauthorized disclosure of {m.pattern_name} violates DPDP Sec 6."
+                    "detected": m.entity_type,
+                    "explanation": f"Unauthorized disclosure of {m.entity_type} violates DPDP Sec 6."
                 })
         
         return violations

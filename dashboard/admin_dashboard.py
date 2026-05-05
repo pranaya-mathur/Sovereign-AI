@@ -102,8 +102,8 @@ if not st.session_state.token:
     
     with col2:
         st.subheader("Login")
-        username = st.text_input("Username", value="admin")
-        password = st.text_input("Password", type="password", value="admin123")
+        username = st.text_input("Username")
+        password = st.text_input("Password", type="password")
         
         if st.button("Login", use_container_width=True):
             if login(username, password):
@@ -112,7 +112,7 @@ if not st.session_state.token:
             else:
                 st.error("Invalid credentials")
         
-        st.info("💡 Default credentials: admin / admin123")
+        st.info("Use enterprise-provisioned credentials.")
     
     st.stop()
 

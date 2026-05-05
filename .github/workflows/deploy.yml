@@ -70,7 +70,7 @@ jobs:
           service: '${{ env.API_SERVICE }}'
           region: '${{ env.REGION }}'
           image: '${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.API_SERVICE }}:${{ github.sha }}'
-          flags: '--allow-unauthenticated'
+          flags: '--no-allow-unauthenticated'
 
       # --- Dashboard Service ---
       - name: Build and Push Dashboard Image
@@ -84,4 +84,4 @@ jobs:
           service: '${{ env.DASH_SERVICE }}'
           region: '${{ env.REGION }}'
           image: '${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.DASH_SERVICE }}:${{ github.sha }}'
-          flags: '--allow-unauthenticated'
+          flags: '--no-allow-unauthenticated'

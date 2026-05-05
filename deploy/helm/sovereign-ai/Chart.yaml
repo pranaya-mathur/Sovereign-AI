@@ -1,0 +1,14 @@
+apiVersion: v2
+name: sovereign-ai
+description: Sovereign-AI production-grade LLM guardrail platform
+type: application
+version: 4.1.0
+appVersion: "4.1.0"
+keywords:
+  - llm
+  - guardrails
+  - dpdp
+  - bfsi
+  - healthcare
+maintainers:
+  - name: Sovereign-AI Maintainers

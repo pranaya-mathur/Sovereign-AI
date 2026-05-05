@@ -41,6 +41,16 @@ spec:
               name: llm-obs-secrets
               key: groq-api-key
               optional: true
+        - name: JWT_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: llm-obs-secrets
+              key: jwt-secret-key
+        - name: SOVEREIGN_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: llm-obs-secrets
+              key: sovereign-api-key
         resources:
           requests:
             memory: "512Mi"

@@ -1,0 +1,12 @@
+Sovereign-AI Helm release {{ .Release.Name }} is deployed.
+
+Key endpoints:
+  - Service: {{ include "sovereign-ai.fullname" . }}:{{ .Values.service.port }}
+  - Health: /health
+  - Metrics: /metrics
+  - Detect: /api/detect (requires x-api-key or Bearer JWT)
+
+Security reminders:
+  1. Ensure secret {{ .Values.secrets.name }} contains database-url, jwt-secret-key, sovereign-api-key.
+  2. Keep STORE_RAW_LLM_RESPONSE=false for DPDP minimization.
+  3. Restrict ingress and enable mTLS for regulated environments.

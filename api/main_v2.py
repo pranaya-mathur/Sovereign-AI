@@ -2,7 +2,6 @@
 
 import logging
 import os
-import uuid
 from contextlib import asynccontextmanager
 from typing import Any, Dict
 
@@ -11,15 +10,18 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from sqlalchemy.orm import Session
+try:
+    from slowapi.middleware import SlowAPIMiddleware
+except Exception:  # pragma: no cover - optional dependency fallback
+    SlowAPIMiddleware = None
 
 from api.models import (
-    DetectionRequest,
-    DetectionResponse,
     HealthResponse,
     StatsResponse,
 )
 from api.dependencies import get_control_tower
 from api.middleware import MetricsMiddleware, RequestLoggingMiddleware
+from api.middleware.auth import APIKeyJWTAuthMiddleware, limiter
 from api.metrics import router as metrics_router
 from api.routes import admin as admin_routes
 from api.routes import auth as auth_routes
@@ -27,9 +29,7 @@ from api.routes import detection as detection_routes
 from api.routes import governance as governance_routes
 from api.routes import monitoring as monitoring_routes
 from enforcement.control_tower_v3 import ControlTowerV3
-from persistence.database import SessionLocal, get_db
-from persistence.user_repository import UserRepository
-from api.auth.jwt_handler import get_password_hash
+from persistence.database import get_db
 from persistence.repository import DetectionRepository, MetricsRepository
 
 logger = logging.getLogger(__name__)
@@ -43,31 +43,10 @@ def _is_production() -> bool:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifecycle management for FastAPI app."""
-    # Optional default admin (disabled when SEED_DEFAULT_USERS=false; see README)
-    if os.getenv("SEED_DEFAULT_USERS", "true").lower() == "true":
-        try:
-            db = SessionLocal()
-            user_repo = UserRepository(db)
-            if not user_repo.get_by_username("admin"):
-                hashed_pw = get_password_hash("admin123")
-                user_repo.create(
-                    {
-                        "username": "admin",
-                        "email": "admin@sovereign-ai.com",
-                        "hashed_password": hashed_pw,
-                        "role": "admin",
-                        "rate_limit_tier": "enterprise",
-                        "disabled": False,
-                    }
-                )
-                logger.warning(
-                    "Default admin user created (username=admin). "
-                    "Change the password and set SEED_DEFAULT_USERS=false in production."
-                )
-            db.close()
-        except Exception as e:
-            logger.warning("User seeding skipped or failed: %s", e)
-
+    if os.getenv("SEED_DEFAULT_USERS"):
+        logger.warning(
+            "SEED_DEFAULT_USERS is deprecated and ignored; runtime user seeding is disabled."
+        )
     yield
 
     logger.info("Shutting down LLM Observability API...")
@@ -76,7 +55,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="LLM Observability API",
     description="Production-grade LLM observability with 3-tier detection",
-    version="4.0.0",
+    version="4.1.0",
     lifespan=lifespan,
 )
 
@@ -103,6 +82,10 @@ app.add_middleware(
 # Add custom middleware
 app.add_middleware(MetricsMiddleware)
 app.add_middleware(RequestLoggingMiddleware)
+if SlowAPIMiddleware is not None:
+    app.add_middleware(SlowAPIMiddleware)
+app.add_middleware(APIKeyJWTAuthMiddleware)
+app.state.limiter = limiter
 
 # Include metrics router
 app.include_router(metrics_router, tags=["metrics"])
@@ -118,7 +101,7 @@ async def root():
     """Root endpoint."""
     return {
         "service": "LLM Observability API",
-        "version": "4.0.0",
+        "version": "4.1.0",
         "status": "operational",
         "docs": "/docs",
     }
@@ -171,7 +154,7 @@ async def get_stats(
             "health_message": stats["health"]["message"],
         })
     except Exception as e:
-        print(f"Warning: Could not save metrics snapshot: {e}")
+        logger.warning("Could not save metrics snapshot: %s", e)
     
     return StatsResponse(
         total_detections=stats["total"],
@@ -181,130 +164,6 @@ async def get_stats(
         distribution=stats["distribution"],
         health=stats["health"],
     )
-
-
-@app.post("/detect", response_model=DetectionResponse)
-async def detect(
-    request: DetectionRequest,
-    control_tower: ControlTowerV3 = Depends(get_control_tower),
-    db: Session = Depends(get_db),
-):
-    """Detect issues in LLM response using 3-tier system."""
-    request_id = str(uuid.uuid4())
-    
-    try:
-        result = control_tower.evaluate_response(
-            llm_response=request.llm_response,
-            context=request.context or {},
-        )
-        
-        # Save to database
-        try:
-            detection_repo = DetectionRepository(db)
-            detection_repo.create({
-                "llm_response": request.llm_response,
-                "context": request.context,
-                "action": result.action.value,
-                "tier_used": result.tier_used,
-                "method": result.method,
-                "confidence": result.confidence,
-                "processing_time_ms": result.processing_time_ms,
-                "failure_class": result.failure_class.value if result.failure_class else None,
-                "severity": result.severity.value if result.severity else None,
-                "explanation": result.explanation,
-                "blocked": result.action.value == "block",
-                "request_id": request_id,
-            })
-        except Exception as e:
-            print(f"Warning: Could not save detection log: {e}")
-        
-        return DetectionResponse(
-            action=result.action.value,
-            tier_used=result.tier_used,
-            method=result.method,
-            confidence=result.confidence,
-            processing_time_ms=result.processing_time_ms,
-            failure_class=result.failure_class.value if result.failure_class else None,
-            severity=result.severity.value if result.severity else None,
-            explanation=result.explanation,
-            blocked=result.action.value == "block",
-            findings=result.findings,
-        )
-    
-    except Exception as e:
-        logger.exception("Detection failed")
-        detail = (
-            "Detection failed"
-            if _is_production()
-            else f"Detection failed: {str(e)}"
-        )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=detail,
-        )
-
-
-@app.post("/detect/batch", response_model=Dict[str, Any])
-async def detect_batch(
-    requests: list[DetectionRequest],
-    control_tower: ControlTowerV3 = Depends(get_control_tower),
-    db: Session = Depends(get_db),
-):
-    """Batch detection for multiple LLM responses."""
-    if len(requests) > 100:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Batch size exceeds maximum of 100",
-        )
-    
-    detection_repo = DetectionRepository(db)
-    results = []
-    
-    for req in requests:
-        request_id = str(uuid.uuid4())
-        try:
-            result = control_tower.evaluate_response(
-                llm_response=req.llm_response,
-                context=req.context or {},
-            )
-            
-            # Save to database
-            try:
-                detection_repo.create({
-                    "llm_response": req.llm_response,
-                    "context": req.context,
-                    "action": result.action.value,
-                    "tier_used": result.tier_used,
-                    "method": result.method,
-                    "confidence": result.confidence,
-                    "processing_time_ms": result.processing_time_ms,
-                    "failure_class": result.failure_class.value if result.failure_class else None,
-                    "severity": result.severity.value if result.severity else None,
-                    "explanation": result.explanation,
-                    "blocked": result.action.value == "block",
-                    "request_id": request_id,
-                })
-            except Exception as e:
-                print(f"Warning: Could not save detection log: {e}")
-            
-            results.append({
-                "action": result.action.value,
-                "tier_used": result.tier_used,
-                "method": result.method,
-                "confidence": result.confidence,
-                "processing_time_ms": result.processing_time_ms,
-                "blocked": result.action.value == "block",
-            })
-        except Exception as e:
-            results.append({
-                "error": str(e),
-                "blocked": False,
-            })
-    
-    return {
-        "total": len(requests),
-        "results": results,
-    }
 
 
 @app.get("/logs/recent")

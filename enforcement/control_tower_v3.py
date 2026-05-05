@@ -21,12 +21,11 @@ from contracts.failure_classes import FailureClass
 from core.metrics import TierMetrics, DetectionTier
 from enforcement.tier_router import TierRouter, TierDecision
 from enforcement.dialog_orchestrator import DialogManager
+from enforcement.enrichment import emit_compliance_row, enrich_result_metadata
+from enforcement.moderation_fusion import apply_external_moderation_fusion
 from signals.embeddings.semantic_detector import SemanticDetector
 from signals.regex.pattern_library import PatternLibrary
-from persistence.compliance_jsonl import ComplianceJSONLLogger, sha256_text
-from providers.external_moderation import run_external_moderation_pipeline
-from rules.pii_india import redact_india_pii
-from enforcement.output_validator import run_output_validation
+from persistence.compliance_jsonl import ComplianceJSONLLogger
 from enforcement.agentic_rails import agentic_preflight
 
 logger = logging.getLogger(__name__)
@@ -162,35 +161,14 @@ class ControlTowerV3:
         context: Dict[str, Any],
         session_id: Optional[str],
     ) -> None:
-        if not self._compliance_logger:
-            return
-        cfg = self.policy.get_compliance_audit_config()
-        row: Dict[str, Any] = {
-            "session_id": session_id,
-            "action": result.action.value,
-            "tier_used": result.tier_used,
-            "method": result.method,
-            "confidence": result.confidence,
-            "failure_class": result.failure_class.value if result.failure_class else None,
-            "processing_time_ms": result.processing_time_ms,
-            "context_hash": sha256_text(str(sorted((context or {}).keys()))),
-            "response_hash": sha256_text(llm_response),
-        }
-        if result.metadata.get("pii_india"):
-            row["pii_aggregate_score"] = result.metadata["pii_india"].get("aggregate_score")
-        if result.metadata.get("output_validation"):
-            ov = result.metadata["output_validation"]
-            row["groundedness_score"] = ov.get("groundedness_score")
-            row["output_validation_attempts"] = ov.get("attempts")
-        if result.metadata.get("corrected_response"):
-            row["output_self_corrected"] = True
-        if not cfg.get("store_text_hashes_only", True):
-            row["response_preview"] = (llm_response or "")[:500]
-        
-        if result.findings:
-            row["findings"] = result.findings
-            
-        self._compliance_logger.append(row)
+        emit_compliance_row(
+            llm_response=llm_response,
+            result=result,
+            context=context,
+            session_id=session_id,
+            policy=self.policy,
+            compliance_logger=self._compliance_logger,
+        )
 
     def _enrich_result(
         self,
@@ -200,77 +178,18 @@ class ControlTowerV3:
         span: Any,
         external_snapshot: Optional[Dict[str, Any]] = None,
     ) -> None:
-        """Attach PII scan, optional output validation, and OTel attributes."""
-        if external_snapshot:
-            result.metadata["external_moderation"] = external_snapshot
-        pii_cfg = self.policy.get_pii_india_config()
-        if pii_cfg.get("enabled", False) and pii_cfg.get("auto_scan", True):
-            if pii_cfg.get("include_in_metadata", True):
-                result.metadata["pii_india"] = redact_india_pii(llm_response)
-
-        ov_cfg = self.policy.get_output_validation_config()
-        if (
-            ov_cfg.get("enabled", False)
-            and result.action != EnforcementAction.BLOCK
-        ):
-            agent = self.llm_agent if self.tier3_available else None
-            ov = run_output_validation(
-                llm_response,
-                context or {},
-                agent,
-                threshold=float(ov_cfg.get("groundedness_threshold", 0.7)),
-                max_retries=int(ov_cfg.get("max_retries", 1)),
-            )
-            result.metadata["output_validation"] = ov
-            gs = ov.get("groundedness_score")
-            if gs is not None:
-                span.set_attribute("sovereign.groundedness_score", float(gs))
-            if ov.get("corrected_response"):
-                result.metadata["corrected_response"] = ov["corrected_response"]
-                result.explanation = (
-                    result.explanation + " | Output self-corrected for grounding (Tier 3)."
-                ).strip(" |")
-
-        # ✅ RAG Rails: Faithfulness, Citations, Qdrant Grounding
-        rag_cfg = self.policy.get_rag_config()
-        if rag_cfg.get("enabled", False):
-            try:
-                from signals.rag_logic import RAGRail
-                rag_rail = RAGRail(self.semantic_detector)
-                
-                # 1. Faithfulness
-                retrieval_ctx = context.get("retrieval_context") or context.get("documents")
-                faith = rag_rail.check_faithfulness(
-                    llm_response, 
-                    retrieval_ctx, 
-                    threshold=rag_cfg.get("faithfulness_threshold", 0.65)
-                )
-                result.metadata["rag_faithfulness"] = faith
-                
-                # 2. Citations
-                citations = rag_rail.check_citations(llm_response)
-                result.metadata["rag_citations"] = citations
-                
-                # 3. Qdrant Grounding
-                if rag_cfg.get("qdrant_grounding", False):
-                    grounding = rag_rail.verify_grounding_with_qdrant(llm_response)
-                    result.metadata["rag_qdrant_grounding"] = grounding
-                
-                # Force warning if unfaithful
-                if faith.get("status") == "unfaithful":
-                    result.action = EnforcementAction.WARN
-                    result.explanation += " | Unfaithful to source context"
-                    
-            except Exception as e:
-                logger.warning(f"RAG rails failed: {e}")
-
-        ext_meta = result.metadata.get("external_moderation")
-        if ext_meta:
-            span.set_attribute("sovereign.external_provider", str(ext_meta.get("provider", "")))
-            span.set_attribute(
-                "sovereign.external_max_score",
-                float(ext_meta.get("max_category_score") or 0.0),
-            )
+        """Attach enrichment metadata and observability attributes."""
+        enrich_result_metadata(
+            llm_response=llm_response,
+            result=result,
+            context=context,
+            span=span,
+            policy=self.policy,
+            semantic_detector=self.semantic_detector,
+            llm_agent=self.llm_agent,
+            tier3_available=self.tier3_available,
+            external_snapshot=external_snapshot,
+        )
 
     def _safe_regex_search(self, pattern: re.Pattern, text: str, timeout_seconds: float = 0.5) -> Optional[re.Match]:
         """Safely search with regex with cross-platform timeout protection.
@@ -767,15 +686,12 @@ class ControlTowerV3:
 
                 external_snapshot = None
                 ext_cfg = self.policy.get_external_moderation_config()
-                if ext_cfg.get("enabled", False):
-                    ext_agg = run_external_moderation_pipeline(llm_response, ext_cfg)
-                    if ext_agg:
-                        tier1_result = self.tier_router.fuse_external(
-                            tier1_result,
-                            ext_agg,
-                            fuse_weight=float(ext_cfg.get("fuse_weight", 0.35)),
-                        )
-                external_snapshot = tier1_result.get("external_moderation")
+                tier1_result, external_snapshot = apply_external_moderation_fusion(
+                    llm_response=llm_response,
+                    tier1_result=tier1_result,
+                    ext_cfg=ext_cfg,
+                    tier_router=self.tier_router,
+                )
                 span.add_event(
                     "sovereign.tier1_and_external",
                     {

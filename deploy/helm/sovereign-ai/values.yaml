@@ -1,0 +1,110 @@
+nameOverride: ""
+fullnameOverride: ""
+
+image:
+  repository: sovereign-ai
+  tag: "4.1.0"
+  pullPolicy: IfNotPresent
+
+replicaCount: 3
+
+service:
+  type: ClusterIP
+  port: 8000
+
+resources:
+  requests:
+    cpu: "500m"
+    memory: "1Gi"
+  limits:
+    cpu: "2000m"
+    memory: "4Gi"
+
+hpa:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 10
+  cpuUtilization: 70
+  memoryUtilization: 80
+
+probes:
+  liveness:
+    path: /health
+    initialDelaySeconds: 30
+    periodSeconds: 10
+  readiness:
+    path: /health
+    initialDelaySeconds: 10
+    periodSeconds: 5
+
+auth:
+  enableZeroTrust: true
+  exemptPaths: "/,/health,/docs,/openapi.json,/redoc,/metrics,/api/auth"
+
+airGappedMode: false
+
+featureFlags:
+  enableTier3: false
+  storeRawLlmResponse: false
+  anthropicModerationLite: false
+
+fallbacks:
+  externalModerationCircuitRetries: "2"
+  externalModerationCircuitThreshold: "3"
+
+env:
+  ENV: production
+  LOG_LEVEL: INFO
+  CORS_ORIGINS: "https://app.example.com"
+  OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector:4317"
+
+postgres:
+  enabled: false
+  existingSecretName: sovereign-ai-secrets
+  databaseUrlKey: database-url
+
+redis:
+  enabled: false
+  existingSecretName: sovereign-ai-secrets
+  redisUrlKey: redis-url
+
+secrets:
+  create: false
+  name: sovereign-ai-secrets
+  databaseUrl: ""
+  jwtSecretKey: ""
+  sovereignApiKey: ""
+  groqApiKey: ""
+  redisUrl: ""
+
+config:
+  policyYaml: |
+    version: "1.0.0"
+    global:
+      default_action: "log"
+      strict_mode: true
+    thresholds:
+      tier1_cutoff: 0.80
+      tier2_cutoff: 0.15
+      uncertain_default: 0.95
+    observability:
+      enabled: true
+      service_name: "sovereign-ai-guard"
+      otlp_endpoint: "http://otel-collector:4317"
+      sampling_rate: 1.0
+
+ingress:
+  enabled: false
+  className: nginx
+  annotations: {}
+  hosts:
+    - host: sovereign-ai.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    enabled: true
+    secretName: sovereign-ai-tls
+  mtls:
+    enabled: false
+    secretName: sovereign-ai-client-ca

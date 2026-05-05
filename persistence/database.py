@@ -1,10 +1,13 @@
 """Database configuration and session management."""
 
 import os
+import logging
 from typing import Generator
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
+
+logger = logging.getLogger(__name__)
 
 
 # Database URL from environment or default to SQLite for development
@@ -49,4 +52,4 @@ def init_db() -> None:
     from persistence.models import Base
     
     Base.metadata.create_all(bind=engine)
-    print("✅ Database initialized successfully")
+    logger.info("Database initialized successfully")

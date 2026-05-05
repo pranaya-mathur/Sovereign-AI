@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "sovereign-ai.fullname" . }}-config
+data:
+  policy.yaml: |
+{{ .Values.config.policyYaml | indent 4 }}

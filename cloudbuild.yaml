@@ -45,7 +45,7 @@ steps:
   - 'asia-south1'
   - '--platform'
   - 'managed'
-  - '--allow-unauthenticated'
+  - '--no-allow-unauthenticated'
 
 # 5. Deploy Dashboard to Cloud Run
 - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
@@ -60,7 +60,7 @@ steps:
   - 'asia-south1'
   - '--platform'
   - 'managed'
-  - '--allow-unauthenticated'
+  - '--no-allow-unauthenticated'
 
 substitutions:
   _IMAGE_TAG: 'latest'

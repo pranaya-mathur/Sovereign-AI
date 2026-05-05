@@ -9,8 +9,10 @@ All patterns are optimized to prevent catastrophic backtracking:
 import re
 from typing import Dict, List, Tuple
 from dataclasses import dataclass
+import logging
 from contracts.failure_classes import FailureClass
 
+logger = logging.getLogger(__name__)
 
 @dataclass
 class Pattern:
@@ -28,7 +30,7 @@ class Pattern:
             try:
                 self.compiled = re.compile(self.regex, re.IGNORECASE | re.MULTILINE)
             except Exception as e:
-                print(f"⚠️ Warning: Could not compile pattern {self.name}: {e}")
+                logger.warning("Could not compile pattern %s: %s", self.name, e)
                 # Create a pattern that never matches as fallback
                 self.compiled = re.compile(r"(?!.*)", re.IGNORECASE)
 

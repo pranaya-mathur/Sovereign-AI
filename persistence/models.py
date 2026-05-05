@@ -14,6 +14,7 @@ class Detection(Base):
     id = Column(Integer, primary_key=True, index=True)
     request_id = Column(String, unique=True, index=True)
     llm_response = Column(Text, nullable=False)
+    redacted_llm_response = Column(Text, nullable=True)
     context = Column(JSON, nullable=True)
     action = Column(String, nullable=False)
     tier_used = Column(Integer, nullable=False)

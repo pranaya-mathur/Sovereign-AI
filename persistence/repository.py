@@ -1,5 +1,6 @@
 """Repository pattern for database operations."""
 
+import os
 from typing import List, Optional
 from datetime import datetime, timedelta
 
@@ -7,6 +8,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func, desc
 
 from persistence.models import Detection, MetricsSnapshot
+from rules.pii_india import redact_india_pii
 
 
 class DetectionRepository:
@@ -24,7 +26,16 @@ class DetectionRepository:
         Returns:
             Created Detection instance
         """
-        log = Detection(**detection_data)
+        payload = dict(detection_data)
+        raw_response = payload.get("llm_response", "") or ""
+        redacted_bundle = redact_india_pii(raw_response)
+        payload["redacted_llm_response"] = redacted_bundle.get("redacted_text", "")
+
+        # Optional strict minimization mode: do not persist raw response text at rest.
+        if os.getenv("STORE_RAW_LLM_RESPONSE", "false").lower() != "true":
+            payload["llm_response"] = payload["redacted_llm_response"]
+
+        log = Detection(**payload)
         self.db.add(log)
         self.db.commit()
         self.db.refresh(log)

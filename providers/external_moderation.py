@@ -13,17 +13,28 @@ import urllib.request
 from typing import Any, Dict, List, Optional
 
 from contracts.failure_classes import FailureClass
+from providers.resilience import execute_with_resilience
 
 logger = logging.getLogger(__name__)
 
 
-def _post_json(url: str, headers: Dict[str, str], payload: Dict[str, Any], timeout: float = 12.0) -> Optional[Dict[str, Any]]:
+def _post_json(
+    url: str,
+    headers: Dict[str, str],
+    payload: Dict[str, Any],
+    timeout: float = 12.0,
+    provider_name: str = "external",
+) -> Optional[Dict[str, Any]]:
     data = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(url, data=data, headers=headers, method="POST")
-    try:
+
+    def _op() -> Optional[Dict[str, Any]]:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             body = resp.read().decode("utf-8", errors="replace")
             return json.loads(body)
+
+    try:
+        return execute_with_resilience(provider_name, _op)
     except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, json.JSONDecodeError) as e:
         logger.debug("external moderation request failed: %s", e)
         return None
@@ -36,7 +47,12 @@ def moderate_openai(text: str, api_key: Optional[str] = None) -> Optional[Dict[s
         return None
     url = "https://api.openai.com/v1/moderations"
     headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
-    body = _post_json(url, headers, {"model": "text-moderation-latest", "input": text[:32000]})
+    body = _post_json(
+        url,
+        headers,
+        {"model": "text-moderation-latest", "input": text[:32000]},
+        provider_name="openai",
+    )
     if not body or "results" not in body:
         return None
     res = body["results"][0]
@@ -69,7 +85,7 @@ def moderate_azure_content_safety(text: str) -> Optional[Dict[str, Any]]:
         "categories": ["Hate", "SelfHarm", "Sexual", "Violence"],
         "outputType": "FourSeverityLevels",
     }
-    body = _post_json(url, headers, payload)
+    body = _post_json(url, headers, payload, provider_name="azure_content_safety")
     if not body:
         return None
     analyses = body.get("categoriesAnalysis") or body.get("categoriesAnalysisResults") or []
@@ -118,7 +134,7 @@ def moderate_anthropic_lite(text: str) -> Optional[Dict[str, Any]]:
             }
         ],
     }
-    body = _post_json(url, headers, payload, timeout=20.0)
+    body = _post_json(url, headers, payload, timeout=20.0, provider_name="anthropic_lite")
     if not body:
         return None
     content = ""

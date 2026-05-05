@@ -87,12 +87,3 @@ data:
       ollama_model: "qwen3.5:9b"
       ollama_base_url: "http://ollama-service:11434"
 
----
-apiVersion: v1
-kind: Secret
-metadata:
-  name: llm-obs-secrets
-type: Opaque
-stringData:
-  database-url: "postgresql://user:password@postgres-service:5432/llm_observability"
-  groq-api-key: "your-groq-api-key-here"

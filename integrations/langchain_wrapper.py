@@ -6,11 +6,14 @@ from typing import Any, Dict, List, Optional
 from langchain_core.runnables import RunnableSerializable, RunnableConfig
 from langchain_core.messages import BaseMessage
 import httpx
+import logging
+
+logger = logging.getLogger(__name__)
 
 class SovereignLangChainGuard(RunnableSerializable[Any, Any]):
     """LangChain Runnable that guards against unsafe content."""
     
-    endpoint: str = "http://localhost:8000/detect"
+    endpoint: str = "http://localhost:8000/api/detect"
     api_key: Optional[str] = None
     
     def invoke(self, input: Any, config: Optional[RunnableConfig] = None) -> Any:
@@ -33,7 +36,7 @@ class SovereignLangChainGuard(RunnableSerializable[Any, Any]):
                 
                 response = client.post(
                     self.endpoint,
-                    json={"llm_response": text, "context": {}},
+                    json={"text": text, "context": {}},
                     headers=headers
                 )
                 
@@ -45,6 +48,6 @@ class SovereignLangChainGuard(RunnableSerializable[Any, Any]):
             if "Sovereign AI Blocked" in str(e):
                 raise e
             # Log and allow if system is down (fail-safe)
-            print(f"Sovereign AI Integration Error: {e}")
+            logger.warning("Sovereign AI integration error: %s", e)
             
         return input

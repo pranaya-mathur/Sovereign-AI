@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sovereign-ai"
-version = "4.0.0"
+version = "4.1.0"
 description = "Production-ready safety layer for LLM deployments. Detects hallucinations, prompt injections, and policy violations using intelligent 3-tier detection."
 readme = "README.md"
 authors = [

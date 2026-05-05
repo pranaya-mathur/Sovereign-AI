@@ -3,11 +3,8 @@
 Provides CRUD operations for user management with SQLite/PostgreSQL.
 """
 
-import os
 import logging
 from typing import Optional, List
-from datetime import datetime
-import json
 
 from sqlalchemy.orm import Session
 from sqlalchemy import text
@@ -28,11 +25,6 @@ class UserStore:
         """
         self.db = db
         self._ensure_table()
-        
-        # Only seed default users if explicitly enabled or in development
-        should_seed = os.getenv("SEED_DEFAULT_USERS", "true").lower() == "true"
-        if should_seed:
-            self._ensure_default_users()
 
 
     def _ensure_table(self):
@@ -54,53 +46,6 @@ class UserStore:
             self.db.commit()
         except Exception as e:
             logger.warning(f"Could not create users table: {e}")
-            self.db.rollback()
-
-    def _ensure_default_users(self):
-        """Create default admin user if not exists."""
-        try:
-            # Check if admin exists
-            result = self.db.execute(
-                text("SELECT username FROM users WHERE username = :username"),
-                {"username": "admin"}
-            )
-            if result.fetchone() is None:
-                # Create default admin
-                admin_password_hash = pwd_context.hash("admin123")
-                self.db.execute(
-                    text("""
-                        INSERT INTO users (username, email, password_hash, role, rate_limit_tier)
-                        VALUES (:username, :email, :password_hash, :role, :tier)
-                    """),
-                    {
-                        "username": "admin",
-                        "email": "admin@llm-obs.local",
-                        "password_hash": admin_password_hash,
-                        "role": "admin",
-                        "tier": "enterprise",
-                    }
-                )
-                
-                # Create test user
-                user_password_hash = pwd_context.hash("user123")
-                self.db.execute(
-                    text("""
-                        INSERT INTO users (username, email, password_hash, role, rate_limit_tier)
-                        VALUES (:username, :email, :password_hash, :role, :tier)
-                    """),
-                    {
-                        "username": "testuser",
-                        "email": "user@llm-obs.local",
-                        "password_hash": user_password_hash,
-                        "role": "user",
-                        "tier": "pro",
-                    }
-                )
-                
-                self.db.commit()
-                logger.info("✅ Default users created (admin/admin123, testuser/user123)")
-        except Exception as e:
-            logger.warning(f"Could not create default users: {e}")
             self.db.rollback()
 
     def create_user(

@@ -32,6 +32,7 @@ prometheus-client>=0.19.0
 python-json-logger>=2.0.0
 python-multipart>=0.0.6
 redis>=5.0.0  # Distributed caching and rate limiting
+slowapi>=0.1.9
 
 # Phase 5: Authentication & Dashboard
 python-jose[cryptography]>=3.3.0
