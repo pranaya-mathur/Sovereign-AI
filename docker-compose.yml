@@ -1,79 +1,103 @@
+# Sovereign-AI v4.1.0-LTS — Docker stack aligned with deploy/helm/sovereign-ai env surface.
+#
+# Production / zero-trust usage on VPS, bare metal, or air-gapped VMs:
+#   1. cp .env.example .env
+#   2. Set mandatory secrets: POSTGRES_PASSWORD, JWT_SECRET_KEY, SOVEREIGN_API_KEY, GF_ADMIN_PASSWORD
+#   3. docker compose up --build -d
+#   4. curl -H "x-api-key: $SOVEREIGN_API_KEY" http://localhost:8080/health
+#
+# Compose reads `.env` for ${VAR} substitution in this file and passes variables into containers via env_file + environment.
+
 version: '3.8'
 
 services:
-  # PostgreSQL Database
   postgres:
     image: postgres:16-alpine
-    container_name: llm-obs-postgres
+    container_name: sovereign-postgres
+    env_file: .env
     environment:
-      POSTGRES_USER: llm_observability
-      POSTGRES_PASSWORD: changeme_secure_password
-      POSTGRES_DB: llm_observability
+      POSTGRES_USER: ${POSTGRES_USER:-llm_observability}
+      # Mandatory: no default password (matches regulated baseline).
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env — see .env.example}
+      POSTGRES_DB: ${POSTGRES_DB:-llm_observability}
     ports:
-      - "5454:5432"
+      - "${POSTGRES_PUBLISH_PORT:-5454}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U llm_observability"]
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
       interval: 10s
       timeout: 5s
       retries: 5
     networks:
-      - llm-obs-network
+      - sovereign-net
+    restart: unless-stopped
 
-  # LLM Observability API
   api:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: llm-obs-api
+    container_name: sovereign-api
+    env_file: .env
     environment:
-      DATABASE_URL: postgresql://llm_observability:changeme_secure_password@postgres:5432/llm_observability
+      # Built from compose .env (same pattern as Helm secret database-url).
+      DATABASE_URL: postgresql://${POSTGRES_USER:-llm_observability}:${POSTGRES_PASSWORD:?}@postgres:5432/${POSTGRES_DB:-llm_observability}
+      ENV: ${ENV:-production}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:5173,http://localhost:8080}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      ENABLE_TIER3: ${ENABLE_TIER3:-false}
+      STORE_RAW_LLM_RESPONSE: ${STORE_RAW_LLM_RESPONSE:-false}
+      AUTH_EXEMPT_PATHS: ${AUTH_EXEMPT_PATHS:-/,/health,/docs,/openapi.json,/redoc,/metrics,/api/auth}
+      AIR_GAPPED_MODE: ${AIR_GAPPED_MODE:-false}
+      ANTHROPIC_MODERATION_LITE: ${ANTHROPIC_MODERATION_LITE:-false}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?JWT_SECRET_KEY must be set in .env — see .env.example}
+      SOVEREIGN_API_KEY: ${SOVEREIGN_API_KEY:?SOVEREIGN_API_KEY must be set in .env — see .env.example}
       GROQ_API_KEY: ${GROQ_API_KEY:-}
+      REDIS_URL: ${REDIS_URL:-}
     ports:
-      - "8080:8000"
+      - "${API_PUBLISH_PORT:-8080}:8000"
     depends_on:
       postgres:
         condition: service_healthy
     volumes:
       - ./config:/app/config:ro
     networks:
-      - llm-obs-network
+      - sovereign-net
     restart: unless-stopped
 
-  # Prometheus (optional - for monitoring)
   prometheus:
-    image: prom/prometheus:latest
-    container_name: llm-obs-prometheus
+    image: prom/prometheus:v2.54.1
+    container_name: sovereign-prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
     ports:
-      - "9090:9090"
+      - "${PROMETHEUS_PUBLISH_PORT:-9090}:9090"
     volumes:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus_data:/prometheus
     networks:
-      - llm-obs-network
+      - sovereign-net
     restart: unless-stopped
 
-  # Grafana (optional - for dashboards)
   grafana:
-    image: grafana/grafana:latest
-    container_name: llm-obs-grafana
+    image: grafana/grafana:11.3.0
+    container_name: sovereign-grafana
+    env_file: .env
     environment:
-      GF_SECURITY_ADMIN_PASSWORD: admin
-      GF_USERS_ALLOW_SIGN_UP: false
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SECURITY_ADMIN_USER: ${GF_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GF_ADMIN_PASSWORD:?GF_ADMIN_PASSWORD must be set in .env — see .env.example}
     ports:
-      - "3000:3000"
+      - "${GRAFANA_PUBLISH_PORT:-3000}:3000"
     volumes:
       - grafana_data:/var/lib/grafana
       - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
       - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources:ro
     networks:
-      - llm-obs-network
+      - sovereign-net
     restart: unless-stopped
-
 
 volumes:
   postgres_data:
@@ -81,5 +105,5 @@ volumes:
   grafana_data:
 
 networks:
-  llm-obs-network:
+  sovereign-net:
     driver: bridge

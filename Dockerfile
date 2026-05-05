@@ -1,4 +1,4 @@
-# Multi-stage Dockerfile for production deployment
+# Production-ready single-stage Dockerfile for Sovereign-AI API (v4.1.0-LTS)
 
 FROM python:3.11-slim as base
 
